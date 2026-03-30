@@ -9,12 +9,13 @@
     <div class="card shadow-sm border-0 mb-4 bg-light">
         <div class="card-body">
             <form method="GET" action="{{ url_for('history') }}" class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label small fw-bold text-muted text-uppercase">Filter by Date</label>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Date</label>
                     <input type="date" name="filter_date" class="form-control border-0 shadow-sm" value="{{ f_date }}">
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-bold text-muted text-uppercase">Filter by Location</label>
+
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Location</label>
                     <select name="filter_place" class="form-select border-0 shadow-sm">
                         <option value="">All Locations</option>
                         {% for p in all_places %}
@@ -22,6 +23,16 @@
                         {% endfor %}
                     </select>
                 </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Show</label>
+                    <select name="per_page" class="form-select border-0 shadow-sm">
+                        <option value="10" {{ 'selected' if per_page == 10 }}>10 rows</option>
+                        <option value="20" {{ 'selected' if per_page == 20 }}>20 rows</option>
+                        <option value="50" {{ 'selected' if per_page == 50 }}>50 rows</option>
+                    </select>
+                </div>
+
                 <div class="col-md-4 d-flex gap-2">
                     <button type="submit" class="btn btn-primary w-100 fw-bold">
                         <i class="bi bi-filter me-1"></i> Apply
@@ -101,13 +112,13 @@
     <nav class="mt-4">
         <ul class="pagination justify-content-center">
             <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-                <a class="page-link" href="{{ url_for('history', page=pagination.prev_num, filter_date=f_date, filter_place=f_place) }}">Previous</a>
+                <a class="page-link" href="{{ url_for('history', page=pagination.prev_num, filter_date=f_date, filter_place=f_place, per_page=per_page) }}">Previous</a>
             </li>
             
             {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
                 {% if page_num %}
                     <li class="page-item {{ 'active' if page_num == pagination.page }}">
-                        <a class="page-link" href="{{ url_for('history', page=page_num, filter_date=f_date, filter_place=f_place) }}">{{ page_num }}</a>
+                        <a class="page-link" href="{{ url_for('history', page=page_num, filter_date=f_date, filter_place=f_place, per_page=per_page) }}">{{ page_num }}</a>
                     </li>
                 {% else %}
                     <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -115,7 +126,7 @@
             {% endfor %}
 
             <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-                <a class="page-link" href="{{ url_for('history', page=pagination.next_num, filter_date=f_date, filter_place=f_place) }}">Next</a>
+                <a class="page-link" href="{{ url_for('history', page=pagination.next_num, filter_date=f_date, filter_place=f_place, per_page=per_page) }}">Next</a>
             </li>
         </ul>
     </nav>

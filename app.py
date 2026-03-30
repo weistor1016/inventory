@@ -262,8 +262,11 @@ def save_day():
 def history():
     if 'user_id' not in session: return redirect(url_for('login'))
     
+    # Get pagination and filter values from URL
     page = request.args.get('page', 1, type=int)
-    # Get filter values from the URL
+    # NEW: Get per_page selection (default to 10)
+    per_page = request.args.get('per_page', 10, type=int)
+    
     f_date = request.args.get('filter_date', '')
     f_place = request.args.get('filter_place', '')
 
@@ -275,25 +278,24 @@ def history():
         func.sum(case((DayRecord.is_returned == False, 1), else_=0)).label('unreturned_count')
     ).join(Place).filter(DayRecord.user_id == session['user_id'])
 
-    # Apply Filters if they exist
     if f_date:
         query = query.filter(func.date(DayRecord.timestamp) == f_date)
     if f_place:
         query = query.filter(DayRecord.place_id == f_place)
 
-    # Grouping and Pagination
+    # Use the dynamic per_page variable here
     pagination = query.group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
                       .order_by(desc('day'))\
-                      .paginate(page=page, per_page=10)
+                      .paginate(page=page, per_page=per_page)
 
-    # Fetch all places for the dropdown filter
     all_places = Place.query.filter_by(is_active=True).order_by(Place.name).all()
 
     return render_template('history.html', 
                            pagination=pagination, 
                            all_places=all_places,
                            f_date=f_date,
-                           f_place=f_place)
+                           f_place=f_place,
+                           per_page=per_page) # Pass it to HTML
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
