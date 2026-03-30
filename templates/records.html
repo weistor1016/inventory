@@ -23,14 +23,20 @@
                     <div class="mb-3">
                         <label class="small fw-bold">Item</label>
                         <select name="item_id" class="form-select" required>
-                            {% for i in items %}<option value="{{i.id}}">{{i.name}} (Available: {{i.quantity}})</option>{% endfor %}
+                            {% for i in items %}
+                                {% if i.live_qty > 0 %}
+                                    <option value="{{ i.id }}">{{ i.name }} (Available: {{ i.live_qty }})</option>
+                                {% else %}
+                                    <option value="{{ i.id }}" disabled class="text-danger">{{ i.name }} (OUT OF STOCK)</option>
+                                {% endif %}
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="small fw-bold">Quantity</label>
                         <input type="number" name="qty" class="form-control" min="1" required>
                     </div>
-                    <button type="submit" class="btn btn-success w-100">Add to List</button>
+                    <button type="submit" class="btn btn-success w-100 shadow-sm">Add to List</button>
                 </form>
             </div>
         </div>
@@ -40,37 +46,60 @@
         <h5 class="fw-bold mb-3">Current Session Items</h5>
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
-                <table class="table align-middle mb-0">
+                <table class="table align-middle mb-0" style="table-layout: fixed; width: 100%;">
                     <thead class="table-light">
                         <tr>
-                            <th>Client</th><th>Item</th><th>Qty</th><th class="text-center">Returned?</th><th></th>
+                            <th style="width: 40%;">Client / Item</th>
+                            <th class="text-center" style="width: 15%;">Qty</th>
+                            <th class="text-center" style="width: 30%;">Status</th>
+                            <th class="text-end" style="width: 15%;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for entry in entries %}
+                        {% for client_name, items in grouped_entries.items() %}
+                        <tr class="table-secondary">
+                            <td colspan="4" class="fw-bold py-2">
+                                <i class="bi bi-person-circle me-2"></i> {{ client_name }}
+                            </td>
+                        </tr>
+                        
+                        {% for entry in items %}
                         <tr class="{{ 'table-success' if entry.is_returned else '' }}">
-                            <td><strong>{{ entry.client_name }}</strong></td>
-                            <td>{{ entry.item_name }}</td>
-                            <td>{{ entry.qty }}</td>
+                            <td class="ps-4 text-truncate">
+                                <i class="bi bi-arrow-return-right me-2 text-muted"></i>{{ entry.item_name }}
+                            </td>
+                            <td class="text-center fw-bold">
+                                {{ entry.qty }}
+                            </td>
                             <td class="text-center">
-                                <a href="{{ url_for('toggle_session_return', entry_id=entry.id) }}" class="btn btn-sm {{ 'btn-success' if entry.is_returned else 'btn-outline-secondary' }}">
-                                    {{ '✅ Yes' if entry.is_returned else '❌ No' }}
+                                <a href="{{ url_for('toggle_session_return', entry_id=entry.id) }}" 
+                                   class="btn btn-sm w-75 {{ 'btn-success' if entry.is_returned else 'btn-outline-secondary' }}">
+                                    {{ 'Returned' if entry.is_returned else 'Out' }}
                                 </a>
                             </td>
                             <td class="text-end">
-                                <a href="{{ url_for('remove_entry', entry_id=entry.id) }}" class="text-danger"><i class="bi bi-trash"></i></a>
+                                <a href="{{ url_for('remove_entry', entry_id=entry.id) }}" class="btn btn-link text-danger p-0">
+                                    <i class="bi bi-trash3"></i>
+                                </a>
                             </td>
                         </tr>
+                        {% endfor %}
+                        
                         {% else %}
-                        <tr><td colspan="5" class="text-center py-4 text-muted">No items in this session yet.</td></tr>
+                        <tr>
+                            <td colspan="4" class="text-center py-5 text-muted">No items in this session yet.</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
-        {% if entries %}
-        <div class="d-grid mt-4">
-            <a href="{{ url_for('save_day') }}" class="btn btn-primary btn-lg shadow">Finish & Save Records</a>
+
+        {% if grouped_entries %}
+        <div class="d-grid mt-4 pb-5">
+            <a href="{{ url_for('save_day') }}" class="btn btn-primary btn-lg shadow">
+                <i class="bi bi-cloud-upload me-2"></i>Finish & Save Records
+            </a>
         </div>
         {% endif %}
     </div>

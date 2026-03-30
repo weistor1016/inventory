@@ -1,28 +1,49 @@
 {% extends "base.html" %}
+
 {% block content %}
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold">📦 Inventory Management</h3>
-        
-        <div id="master-controls" class="d-none animate-fade-in">
-            <button type="button" class="btn btn-outline-secondary me-2" onclick="window.location.reload()">
-                <i class="bi bi-x-lg"></i> Cancel
-            </button>
-            <button type="submit" form="inventory-form" class="btn btn-primary shadow">
-                <i class="bi bi-check-all"></i> Save All Changes
-            </button>
+<div class="row">
+    <div class="col-md-4">
+        <div class="card shadow-sm p-4 mb-4 border-0">
+            <h4 class="fw-bold mb-3"><i class="bi bi-plus-circle text-primary"></i> Add New Item</h4>
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Item Name</label>
+                    <input type="text" name="name" class="form-control form-control-lg bg-light border-0" placeholder="e.g. Hammer" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Starting Quantity</label>
+                    <input type="number" name="qty" class="form-control form-control-lg bg-light border-0" value="1" min="1" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 fw-bold py-2 shadow-sm">
+                    Add to My Stock
+                </button>
+            </form>
         </div>
     </div>
 
-    <form id="inventory-form" action="{{ url_for('bulk_update_inventory') }}" method="POST">
-        <div class="card shadow-sm border-0">
+    <div class="col-md-8">
+        <div class="card shadow-sm p-4 border-0">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="fw-bold mb-0">📦 My Private Inventory</h4>
+                
+                <form class="d-flex" method="GET" action="{{ url_for('inventory') }}">
+                    <div class="input-group">
+                        <input type="text" name="search" class="form-control form-control-sm border-end-0 bg-light" 
+                               placeholder="Search items..." value="{{ search_query }}">
+                        <button class="btn btn-sm btn-outline-secondary border-start-0 bg-light" type="submit">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
             <div class="table-responsive">
-                <table class="table align-middle mb-0">
+                <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Item Name</th>
-                            <th class="text-center" style="width: 200px;">Quantity</th>
-                            <th class="text-end">Status</th>
+                            <th class="border-0">Item Name</th>
+                            <th class="border-0 text-center">Available Qty</th>
+                            <th class="border-0 text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -30,17 +51,30 @@
                         <tr>
                             <td class="fw-bold">{{ item.name }}</td>
                             <td class="text-center">
-                                <input type="number" 
-                                       name="qty_{{ item.id }}" 
-                                       class="form-control text-center fw-bold border-0 bg-light qty-input" 
-                                       value="{{ item.quantity }}" 
-                                       data-original="{{ item.quantity }}"
-                                       oninput="trackChanges()">
+                                <form action="{{ url_for('update_item', id=item.id) }}" method="POST" class="d-inline-flex justify-content-center">
+                                    <div class="input-group input-group-sm" style="width: 100px;">
+                                        <input type="number" name="new_qty" 
+                                            class="form-control text-center fw-bold border-0 bg-light" 
+                                            value="{{ item.quantity }}" min="0">
+                                        <button type="submit" class="btn btn-outline-primary border-0">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    </div>
+                                </form>
                             </td>
                             <td class="text-end">
-                                <span class="badge rounded-pill badge-status {{ 'bg-success' if item.quantity > 5 else 'bg-warning text-dark' }}">
-                                    {{ 'In Stock' if item.quantity > 0 else 'Out of Stock' }}
-                                </span>
+                                <a href="{{ url_for('delete_item', id=item.id) }}" 
+                                   class="btn btn-sm btn-outline-danger border-0"
+                                   onclick="return confirm('Wait! If you delete this, all history for this item will be lost. Proceed?')">
+                                    <i class="bi bi-trash3"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center py-5 text-muted">
+                                <i class="bi bi-box-seam display-1 opacity-25 d-block mb-3"></i>
+                                No items found in your inventory.
                             </td>
                         </tr>
                         {% endfor %}
@@ -48,29 +82,6 @@
                 </table>
             </div>
         </div>
-    </form>
+    </div>
 </div>
-
-<script>
-function trackChanges() {
-    const inputs = document.querySelectorAll('.qty-input');
-    const controls = document.getElementById('master-controls');
-    let hasChanged = false;
-
-    inputs.forEach(input => {
-        if (input.value !== input.getAttribute('data-original')) {
-            hasChanged = true;
-            input.classList.add('bg-warning-subtle'); // Highlight changed fields
-        } else {
-            input.classList.remove('bg-warning-subtle');
-        }
-    });
-
-    if (hasChanged) {
-        controls.classList.remove('d-none');
-    } else {
-        controls.classList.add('d-none');
-    }
-}
-</script>
 {% endblock %}

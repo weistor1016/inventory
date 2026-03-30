@@ -65,6 +65,7 @@ def record():
     if 'user_id' not in session: return redirect(url_for('login'))
     place_id = session.get('current_place_id')
     
+    # 1. Location Selection
     if not place_id:
         if request.method == 'POST':
             session['current_place_id'] = request.form['place_id']
@@ -72,23 +73,64 @@ def record():
             return redirect(url_for('record'))
         return render_template('select_place.html', places=Place.query.all())
 
+    # 2. Add/Merge Entry Logic
     if request.method == 'POST' and 'add_entry' in request.form:
-        # (Insert the merge/stock check logic here from our previous sessions)
-        # Simplified for space:
-        item = Item.query.get(request.form['item_id'])
-        client = Client.query.get(request.form['client_id'])
+        item_id = int(request.form['item_id'])
+        client_id = int(request.form['client_id'])
         qty = int(request.form['qty'])
         
         temp_list = session.get('temp_entries', [])
-        temp_list.append({'id': str(uuid.uuid4()), 'client_id': client.id, 'client_name': client.name, 
-                          'item_id': item.id, 'item_name': item.name, 'qty': qty, 'is_returned': False})
+        
+        # --- MERGE CHECK START ---
+        found = False
+        for entry in temp_list:
+            # If the Client and Item both match, just add the quantity
+            if entry['client_id'] == client_id and entry['item_id'] == item_id:
+                entry['qty'] += qty
+                found = True
+                break
+        
+        # If no match was found, create a brand new row
+        if not found:
+            item = Item.query.get(item_id)
+            client = Client.query.get(client_id)
+            temp_list.append({
+                'id': str(uuid.uuid4()), 
+                'client_id': client.id, 
+                'client_name': client.name, 
+                'item_id': item.id, 
+                'item_name': item.name, 
+                'qty': qty, 
+                'is_returned': False
+            })
+        # --- MERGE CHECK END ---
+        
         session['temp_entries'] = temp_list
         session.modified = True
         return redirect(url_for('record'))
 
-    return render_template('records.html', place=Place.query.get(place_id), 
-                           items=Item.query.filter_by(user_id=session['user_id']).all(), 
-                           clients=Client.query.all(), entries=session.get('temp_entries', []))
+    # 3. Live Stock Calculation (Same as before)
+    db_items = Item.query.filter_by(user_id=session['user_id']).all()
+    temp_entries = session.get('temp_entries', [])
+    
+    display_items = []
+    for item in db_items:
+        in_basket = sum(e['qty'] for e in temp_entries if e['item_id'] == item.id and not e['is_returned'])
+        live_qty = max(0, item.quantity - in_basket)
+        display_items.append({'id': item.id, 'name': item.name, 'live_qty': live_qty})
+
+    grouped_entries = {}
+    for entry in temp_entries:
+        c_name = entry['client_name']
+        if c_name not in grouped_entries:
+            grouped_entries[c_name] = []
+        grouped_entries[c_name].append(entry)
+
+    return render_template('records.html', 
+                           place=Place.query.get(place_id), 
+                           items=display_items, 
+                           clients=Client.query.all(), 
+                           grouped_entries=grouped_entries)
 
 @app.route('/save_day')
 def save_day():
