@@ -6,6 +6,34 @@
         <span class="badge bg-primary rounded-pill">{{ pagination.total }} Sessions found</span>
     </div>
 
+    <div class="card shadow-sm border-0 mb-4 bg-light">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('history') }}" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Filter by Date</label>
+                    <input type="date" name="filter_date" class="form-control border-0 shadow-sm" value="{{ f_date }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Filter by Location</label>
+                    <select name="filter_place" class="form-select border-0 shadow-sm">
+                        <option value="">All Locations</option>
+                        {% for p in all_places %}
+                        <option value="{{ p.id }}" {{ 'selected' if f_place|string == p.id|string }}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary w-100 fw-bold">
+                        <i class="bi bi-filter me-1"></i> Apply
+                    </button>
+                    <a href="{{ url_for('history') }}" class="btn btn-outline-secondary w-100 fw-bold">
+                        Reset
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -69,5 +97,28 @@
         </div>
     </div>
 
-    </div>
+    {% if pagination.pages > 1 %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+                <a class="page-link" href="{{ url_for('history', page=pagination.prev_num, filter_date=f_date, filter_place=f_place) }}">Previous</a>
+            </li>
+            
+            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if page_num %}
+                    <li class="page-item {{ 'active' if page_num == pagination.page }}">
+                        <a class="page-link" href="{{ url_for('history', page=page_num, filter_date=f_date, filter_place=f_place) }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+
+            <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+                <a class="page-link" href="{{ url_for('history', page=pagination.next_num, filter_date=f_date, filter_place=f_place) }}">Next</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>
 {% endblock %}

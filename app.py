@@ -263,20 +263,37 @@ def history():
     if 'user_id' not in session: return redirect(url_for('login'))
     
     page = request.args.get('page', 1, type=int)
-    per_page = 10
+    # Get filter values from the URL
+    f_date = request.args.get('filter_date', '')
+    f_place = request.args.get('filter_place', '')
 
-    # Updated query to include an 'unreturned_count'
-    # We use a CASE statement: if is_returned is False, count 1, else 0.
-    pagination = db.session.query(
+    # Base Query
+    query = db.session.query(
         func.date(DayRecord.timestamp).label('day'),
         DayRecord.place_id,
         Place.name.label('place_name'),
         func.sum(case((DayRecord.is_returned == False, 1), else_=0)).label('unreturned_count')
-    ).join(Place).filter(DayRecord.user_id == session['user_id'])\
-     .group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
-     .order_by(desc('day')).paginate(page=page, per_page=per_page)
+    ).join(Place).filter(DayRecord.user_id == session['user_id'])
 
-    return render_template('history.html', pagination=pagination)
+    # Apply Filters if they exist
+    if f_date:
+        query = query.filter(func.date(DayRecord.timestamp) == f_date)
+    if f_place:
+        query = query.filter(DayRecord.place_id == f_place)
+
+    # Grouping and Pagination
+    pagination = query.group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
+                      .order_by(desc('day'))\
+                      .paginate(page=page, per_page=10)
+
+    # Fetch all places for the dropdown filter
+    all_places = Place.query.filter_by(is_active=True).order_by(Place.name).all()
+
+    return render_template('history.html', 
+                           pagination=pagination, 
+                           all_places=all_places,
+                           f_date=f_date,
+                           f_place=f_place)
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
