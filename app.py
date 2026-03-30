@@ -45,6 +45,10 @@ def index():
 def inventory():
     if 'user_id' not in session: return redirect(url_for('login'))
     user_id = session['user_id']
+    
+    # 1. Get parameters from the URL (GET request)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
     search_query = request.args.get('search', '')
 
     if request.method == 'POST':
@@ -69,46 +73,47 @@ def inventory():
                 db.session.add(Item(name=name, quantity=qty, user_id=user_id))
             db.session.commit()
 
-        # --- NEW: AUTO-REMOVE EMPTY ENTRIES ---
-        # Find items with 0 quantity belonging to this user
+        # --- AUTO-REMOVE EMPTY ENTRIES ---
         zero_items = Item.query.filter_by(user_id=user_id, quantity=0).all()
         for item in zero_items:
-            # Check if anyone is currently borrowing this item
             lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
                 DayRecord.item_id == item.id,
                 DayRecord.is_returned == False
             ).scalar() or 0
             
-            # If 0 in stock AND 0 lent out, delete the item
             if lent_count == 0:
-                # Note: This will only work if there are NO history records 
-                # OR if your database is set to allow deleting items with history.
                 try:
                     db.session.delete(item)
                 except:
-                    db.session.rollback() # Skip if linked to history to prevent crash
+                    db.session.rollback() 
         
         db.session.commit()
         flash("Inventory updated and empty items cleared.", "success")
-        return redirect(url_for('inventory'))
+        # Ensure we redirect back with the same filters active
+        return redirect(url_for('inventory', search=search_query, per_page=per_page, page=page))
 
-    # Fetch items and calculate Lent Out count
+    # --- 2. PAGINATED FETCH ---
     items_query = Item.query.filter_by(user_id=user_id).order_by(Item.name)
     if search_query: 
         items_query = items_query.filter(Item.name.ilike(f"%{search_query}%"))
     
-    items_list = items_query.all()
+    # Use paginate instead of all()
+    pagination = items_query.paginate(page=page, per_page=per_page)
+    items_list = pagination.items
 
-    # Calculate lent_out for each item dynamically
+    # 3. Calculate Lent Out for CURRENT PAGE items only (much faster!)
     for item in items_list:
-        # Sum of quantity_out where is_returned is False
         lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
             DayRecord.item_id == item.id,
             DayRecord.is_returned == False
         ).scalar() or 0
         item.lent_out = lent_count
 
-    return render_template('inventory.html', items=items_list, search_query=search_query)
+    return render_template('inventory.html', 
+                           pagination=pagination, 
+                           items=items_list, 
+                           search_query=search_query, 
+                           per_page=per_page)
 
 @app.route('/record', methods=['GET', 'POST'])
 def record():

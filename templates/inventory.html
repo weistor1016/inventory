@@ -27,11 +27,18 @@
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h4 class="fw-bold mb-0">📦 My Private Inventory</h4>
                     
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 align-items-center">
                         <button type="submit" name="bulk_save" class="btn btn-success btn-sm shadow-sm px-3">
                             <i class="bi bi-cloud-check me-1"></i> Save All
                         </button>
                         
+                        <select name="per_page" class="form-select form-select-sm bg-light border-0 shadow-sm" 
+                                style="width: 100px;" form="searchForm" onchange="document.getElementById('searchForm').submit()">
+                            <option value="10" {{ 'selected' if per_page == 10 }}>10 rows</option>
+                            <option value="20" {{ 'selected' if per_page == 20 }}>20 rows</option>
+                            <option value="50" {{ 'selected' if per_page == 50 }}>50 rows</option>
+                        </select>
+
                         <div class="input-group input-group-sm" style="width: 200px;">
                             <input type="text" name="search" class="form-control border-end-0 bg-light" 
                                    placeholder="Search..." value="{{ search_query }}" form="searchForm">
@@ -55,7 +62,7 @@
                         <tbody>
                             {% for item in items %}
                             <tr>
-                                <td class="fw-bold">{{ item.name }}</td>
+                                <td class="fw-bold text-truncate" style="max-width: 200px;">{{ item.name }}</td>
                                 <td class="text-center">
                                     {% if item.lent_out > 0 %}
                                         <span class="badge rounded-pill bg-warning text-dark px-3">
@@ -91,6 +98,30 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if pagination and pagination.pages > 1 %}
+                <nav class="mt-4">
+                    <ul class="pagination pagination-sm justify-content-center mb-0">
+                        <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+                            <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.prev_num, search=search_query, per_page=per_page) }}">Previous</a>
+                        </li>
+                        
+                        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                            {% if page_num %}
+                                <li class="page-item {{ 'active' if page_num == pagination.page }}">
+                                    <a class="page-link shadow-sm" href="{{ url_for('inventory', page=page_num, search=search_query, per_page=per_page) }}">{{ page_num }}</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+
+                        <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+                            <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.next_num, search=search_query, per_page=per_page) }}">Next</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
             </div>
         </form>
 
