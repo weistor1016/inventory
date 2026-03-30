@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold">📦 Inventory Management</h3>
+        
+        <div id="master-controls" class="d-none animate-fade-in">
+            <button type="button" class="btn btn-outline-secondary me-2" onclick="window.location.reload()">
+                <i class="bi bi-x-lg"></i> Cancel
+            </button>
+            <button type="submit" form="inventory-form" class="btn btn-primary shadow">
+                <i class="bi bi-check-all"></i> Save All Changes
+            </button>
+        </div>
+    </div>
+
+    <form id="inventory-form" action="{{ url_for('bulk_update_inventory') }}" method="POST">
+        <div class="card shadow-sm border-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item Name</th>
+                            <th class="text-center" style="width: 200px;">Quantity</th>
+                            <th class="text-end">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td class="fw-bold">{{ item.name }}</td>
+                            <td class="text-center">
+                                <input type="number" 
+                                       name="qty_{{ item.id }}" 
+                                       class="form-control text-center fw-bold border-0 bg-light qty-input" 
+                                       value="{{ item.quantity }}" 
+                                       data-original="{{ item.quantity }}"
+                                       oninput="trackChanges()">
+                            </td>
+                            <td class="text-end">
+                                <span class="badge rounded-pill badge-status {{ 'bg-success' if item.quantity > 5 else 'bg-warning text-dark' }}">
+                                    {{ 'In Stock' if item.quantity > 0 else 'Out of Stock' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function trackChanges() {
+    const inputs = document.querySelectorAll('.qty-input');
+    const controls = document.getElementById('master-controls');
+    let hasChanged = false;
+
+    inputs.forEach(input => {
+        if (input.value !== input.getAttribute('data-original')) {
+            hasChanged = true;
+            input.classList.add('bg-warning-subtle'); // Highlight changed fields
+        } else {
+            input.classList.remove('bg-warning-subtle');
+        }
+    });
+
+    if (hasChanged) {
+        controls.classList.remove('d-none');
+    } else {
+        controls.classList.add('d-none');
+    }
+}
+</script>
+{% endblock %}

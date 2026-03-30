@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="p-5 mb-4 bg-white rounded-4 shadow-sm border-0 text-center">
+        <h1 class="display-5 fw-bold text-dark">Welcome, {{ session['username'] }}!</h1>
+        <p class="text-muted fs-5">TrackIt Inventory Management System</p>
+        <hr class="my-4 opacity-25">
+        
+        <div class="row g-4 mt-2">
+            <div class="col-6 col-md-3">
+                <a href="{{ url_for('record') }}" class="card h-100 border-0 shadow-sm text-decoration-none bg-success text-white p-3 hover-shadow">
+                    <div class="card-body">
+                        <i class="bi bi-plus-circle-dotted fs-1"></i>
+                        <h5 class="mt-3">New Record</h5>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="col-6 col-md-3">
+                <a href="{{ url_for('history') }}" class="card h-100 border-0 shadow-sm text-decoration-none bg-info text-white p-3 hover-shadow">
+                    <div class="card-body">
+                        <i class="bi bi-calendar-check fs-1"></i>
+                        <h5 class="mt-3">History</h5>
+                    </div>
+                </a>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <a href="{{ url_for('inventory') }}" class="card h-100 border-0 shadow-sm text-decoration-none bg-primary text-white p-3 hover-shadow">
+                    <div class="card-body">
+                        <i class="bi bi-box-seam fs-1"></i>
+                        <h5 class="mt-3">Inventory</h5>
+                    </div>
+                </a>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <a href="{{ url_for('settings') }}" class="card h-100 border-0 shadow-sm text-decoration-none bg-dark text-white p-3 hover-shadow">
+                    <div class="card-body">
+                        <i class="bi bi-gear-wide-connected fs-1"></i>
+                        <h5 class="mt-3">Settings</h5>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .hover-shadow { transition: transform 0.2s; }
+    .hover-shadow:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.15) !important;
+    }
+</style>
+{% endblock %}
