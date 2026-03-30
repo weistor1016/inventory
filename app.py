@@ -2,7 +2,7 @@ import os, uuid
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from models import db, Item, Place, Client, DayRecord, User
 from datetime import datetime
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, case
 
 app = Flask(__name__)
 app.secret_key = "trackit_secret_key_2026"
@@ -192,14 +192,17 @@ def record():
             grouped_entries[c_name] = []
         grouped_entries[c_name].append(entry)
 
+    today_str = datetime.now().strftime('%Y-%m-%d')
+
     return render_template('records.html', 
                            place=Place.query.get(place_id), 
                            items=display_items, 
                            clients=clients, 
                            grouped_entries=grouped_entries,
-                           last_client_id=session.get('last_client_id')) # Pass the sticky ID
+                           last_client_id=session.get('last_client_id'),
+                           today_date=today_str) # Pass this to the template
 
-@app.route('/save_day')
+@app.route('/save_day', methods=['POST'])
 def save_day():
     if 'user_id' not in session: return redirect(url_for('login'))
     
@@ -210,9 +213,21 @@ def save_day():
         flash("No records to save!", "warning")
         return redirect(url_for('record'))
 
+    # --- MANUAL DATE PROCESSING ---
+    date_str = request.form.get('manual_date')
+    try:
+        # Convert "YYYY-MM-DD" string to datetime object
+        chosen_date = datetime.strptime(date_str, '%Y-%m-%d')
+        # Add current hour/minute so the time is accurate
+        now = datetime.now()
+        final_timestamp = chosen_date.replace(hour=now.hour, minute=now.minute, second=now.second)
+    except Exception:
+        # Fallback to right now if something goes wrong
+        final_timestamp = datetime.now()
+
     try:
         for entry in temp_entries:
-            # 1. Create the permanent record
+            # 1. Create the permanent record with the final_timestamp
             new_record = DayRecord(
                 item_id=entry['item_id'],
                 place_id=place_id,
@@ -220,11 +235,11 @@ def save_day():
                 user_id=session['user_id'],
                 quantity_out=entry['qty'],
                 is_returned=entry['is_returned'],
-                timestamp=datetime.now() # Ensure this is imported from datetime
+                timestamp=final_timestamp  # <--- Use the processed date here
             )
             db.session.add(new_record)
             
-            # 2. Subtract from Inventory ONLY if not already returned
+            # 2. Subtract from Inventory ONLY if checking out (not returning)
             if not entry['is_returned']:
                 item = Item.query.get(entry['item_id'])
                 if item:
@@ -232,11 +247,11 @@ def save_day():
 
         db.session.commit()
         
-        # 3. CLEAR THE SESSION so the basket is empty for the next run
+        # 3. Clear the temporary session data
         session.pop('temp_entries', None)
         session.pop('current_place_id', None)
         
-        flash("Records saved to history successfully!", "success")
+        flash(f"Session saved for {final_timestamp.strftime('%d %b %Y')}!", "success")
     except Exception as e:
         db.session.rollback()
         flash(f"Error saving records: {str(e)}", "danger")
@@ -250,11 +265,13 @@ def history():
     page = request.args.get('page', 1, type=int)
     per_page = 10
 
-    # We paginate the grouped query
+    # Updated query to include an 'unreturned_count'
+    # We use a CASE statement: if is_returned is False, count 1, else 0.
     pagination = db.session.query(
         func.date(DayRecord.timestamp).label('day'),
         DayRecord.place_id,
-        Place.name.label('place_name')
+        Place.name.label('place_name'),
+        func.sum(case((DayRecord.is_returned == False, 1), else_=0)).label('unreturned_count')
     ).join(Place).filter(DayRecord.user_id == session['user_id'])\
      .group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
      .order_by(desc('day')).paginate(page=page, per_page=per_page)

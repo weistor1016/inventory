@@ -101,12 +101,29 @@
         </div>
 
         {% if grouped_entries %}
-        <div class="d-grid mt-4 pb-5">
-            <a href="{{ url_for('save_day') }}" class="btn btn-primary btn-lg shadow">
-                <i class="bi bi-cloud-upload me-2"></i>Finish & Save Records
-            </a>
+        <div class="card shadow-sm border-0 mt-4 bg-light border-start border-4 border-success">
+            <div class="card-body p-4">
+                <form action="{{ url_for('save_day') }}" method="POST">
+                    <div class="row align-items-end">
+                        <div class="col-md-5 mb-3 mb-md-0">
+                            <label class="form-label small fw-bold text-muted text-uppercase">
+                                <i class="bi bi-calendar-event me-1"></i> Session Date
+                            </label>
+                            <input type="date" name="manual_date" class="form-control border-0 shadow-sm form-control-lg" 
+                                   value="{{ today_date }}" required>
+                            <div class="form-text mt-2 small text-muted">Defaults to today, change if back-dating.</div>
+                        </div>
+                        
+                        <div class="col-md-7 text-md-end">
+                            <button type="submit" class="btn btn-success btn-lg px-5 fw-bold shadow w-100 w-md-auto">
+                                <i class="bi bi-cloud-check-fill me-2"></i>Finish & Save Session
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
-        {% endif %}
+        <div class="mb-5"></div> {% endif %}
     </div>
 </div>
 {% endblock %}
