@@ -47,7 +47,8 @@
                         <thead class="table-light">
                             <tr>
                                 <th class="border-0">Item Name</th>
-                                <th class="border-0 text-center" style="width: 150px;">Available Qty</th>
+                                <th class="border-0 text-center" style="width: 120px;">Lent Out</th>
+                                <th class="border-0 text-center" style="width: 120px;">In Stock</th>
                                 <th class="border-0 text-end">Actions</th>
                             </tr>
                         </thead>
@@ -55,6 +56,15 @@
                             {% for item in items %}
                             <tr>
                                 <td class="fw-bold">{{ item.name }}</td>
+                                <td class="text-center">
+                                    {% if item.lent_out > 0 %}
+                                        <span class="badge rounded-pill bg-warning text-dark px-3">
+                                            {{ item.lent_out }} out
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted small">0</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-center">
                                     <input type="hidden" name="item_ids[]" value="{{ item.id }}">
                                     <input type="number" name="quantities[]" 
@@ -72,7 +82,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="3" class="text-center py-5 text-muted">
+                                <td colspan="4" class="text-center py-5 text-muted">
                                     <i class="bi bi-box-seam display-1 opacity-25 d-block mb-3"></i>
                                     No items found.
                                 </td>

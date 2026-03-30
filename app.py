@@ -48,35 +48,67 @@ def inventory():
     search_query = request.args.get('search', '')
 
     if request.method == 'POST':
-        # --- NEW: BULK SAVE LOGIC ---
+        # --- BULK SAVE LOGIC ---
         if 'bulk_save' in request.form:
             item_ids = request.form.getlist('item_ids[]')
             quantities = request.form.getlist('quantities[]')
-            
             for i_id, qty in zip(item_ids, quantities):
                 item = Item.query.filter_by(id=i_id, user_id=user_id).first()
                 if item:
                     item.quantity = int(qty)
             db.session.commit()
-            return redirect(url_for('inventory'))
 
-        # --- EXISTING: ADD NEW ITEM LOGIC ---
-        name = request.form.get('name').strip()
-        qty = int(request.form.get('qty'))
-        item = Item.query.filter_by(user_id=user_id).filter(Item.name.ilike(name)).first()
-        if item: 
-            item.quantity += qty
-        else: 
-            db.session.add(Item(name=name, quantity=qty, user_id=user_id))
+        # --- ADD NEW ITEM LOGIC ---
+        else:
+            name = request.form.get('name').strip()
+            qty = int(request.form.get('qty'))
+            item = Item.query.filter_by(user_id=user_id).filter(Item.name.ilike(name)).first()
+            if item: 
+                item.quantity += qty
+            else: 
+                db.session.add(Item(name=name, quantity=qty, user_id=user_id))
+            db.session.commit()
+
+        # --- NEW: AUTO-REMOVE EMPTY ENTRIES ---
+        # Find items with 0 quantity belonging to this user
+        zero_items = Item.query.filter_by(user_id=user_id, quantity=0).all()
+        for item in zero_items:
+            # Check if anyone is currently borrowing this item
+            lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
+                DayRecord.item_id == item.id,
+                DayRecord.is_returned == False
+            ).scalar() or 0
+            
+            # If 0 in stock AND 0 lent out, delete the item
+            if lent_count == 0:
+                # Note: This will only work if there are NO history records 
+                # OR if your database is set to allow deleting items with history.
+                try:
+                    db.session.delete(item)
+                except:
+                    db.session.rollback() # Skip if linked to history to prevent crash
+        
         db.session.commit()
+        flash("Inventory updated and empty items cleared.", "success")
         return redirect(url_for('inventory'))
 
-    # Sorting items A-Z makes bulk editing much easier
-    items = Item.query.filter_by(user_id=user_id).order_by(Item.name)
+    # Fetch items and calculate Lent Out count
+    items_query = Item.query.filter_by(user_id=user_id).order_by(Item.name)
     if search_query: 
-        items = items.filter(Item.name.ilike(f"%{search_query}%"))
-        
-    return render_template('inventory.html', items=items.all(), search_query=search_query)
+        items_query = items_query.filter(Item.name.ilike(f"%{search_query}%"))
+    
+    items_list = items_query.all()
+
+    # Calculate lent_out for each item dynamically
+    for item in items_list:
+        # Sum of quantity_out where is_returned is False
+        lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
+            DayRecord.item_id == item.id,
+            DayRecord.is_returned == False
+        ).scalar() or 0
+        item.lent_out = lent_count
+
+    return render_template('inventory.html', items=items_list, search_query=search_query)
 
 @app.route('/record', methods=['GET', 'POST'])
 def record():
@@ -433,6 +465,17 @@ def toggle_return(record_id):
         
     record.is_returned = not record.is_returned
     db.session.commit()
+
+    if item.quantity == 0:
+        # Re-check lent out status
+        still_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
+            DayRecord.item_id == item.id,
+            DayRecord.is_returned == False
+        ).scalar() or 0
+        
+        if still_out == 0:
+            db.session.delete(item)
+            db.session.commit()
     
     ts = record.timestamp.strftime('%Y-%m-%d')
     return redirect(url_for('session_details', ts=ts, place_id=record.place_id))
