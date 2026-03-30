@@ -15,13 +15,9 @@
                 </div>
 
                 <div class="col-md-3">
-                    <label class="form-label small fw-bold text-muted text-uppercase">Location</label>
-                    <select name="filter_place" class="form-select border-0 shadow-sm">
-                        <option value="">All Locations</option>
-                        {% for p in all_places %}
-                        <option value="{{ p.id }}" {{ 'selected' if f_place|string == p.id|string }}>{{ p.name }}</option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label small fw-bold text-muted text-uppercase">Location Name</label>
+                    <input type="text" name="filter_place" class="form-control border-0 shadow-sm" 
+                        placeholder="e.g. Old Site" value="{{ f_place }}">
                 </div>
 
                 <div class="col-md-2">

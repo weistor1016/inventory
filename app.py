@@ -267,15 +267,13 @@ def save_day():
 def history():
     if 'user_id' not in session: return redirect(url_for('login'))
     
-    # Get pagination and filter values from URL
     page = request.args.get('page', 1, type=int)
-    # NEW: Get per_page selection (default to 10)
     per_page = request.args.get('per_page', 10, type=int)
     
     f_date = request.args.get('filter_date', '')
-    f_place = request.args.get('filter_place', '')
+    # f_place now captures text (the name) instead of just an ID
+    f_place = request.args.get('filter_place', '').strip()
 
-    # Base Query
     query = db.session.query(
         func.date(DayRecord.timestamp).label('day'),
         DayRecord.place_id,
@@ -285,22 +283,20 @@ def history():
 
     if f_date:
         query = query.filter(func.date(DayRecord.timestamp) == f_date)
+    
+    # NEW: Filter by Place Name (supports deleted/archived places)
     if f_place:
-        query = query.filter(DayRecord.place_id == f_place)
+        query = query.filter(Place.name.ilike(f"%{f_place}%"))
 
-    # Use the dynamic per_page variable here
     pagination = query.group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
                       .order_by(desc('day'))\
                       .paginate(page=page, per_page=per_page)
 
-    all_places = Place.query.filter_by(is_active=True).order_by(Place.name).all()
-
     return render_template('history.html', 
                            pagination=pagination, 
-                           all_places=all_places,
                            f_date=f_date,
                            f_place=f_place,
-                           per_page=per_page) # Pass it to HTML
+                           per_page=per_page)
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
