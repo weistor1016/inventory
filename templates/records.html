@@ -17,7 +17,12 @@
                     <div class="mb-3">
                         <label class="small fw-bold">Client</label>
                         <select name="client_id" class="form-select" required>
-                            {% for c in clients %}<option value="{{c.id}}">{{c.name}}</option>{% endfor %}
+                            {% for c in clients %}
+                                <option value="{{ c.id }}" 
+                                    {% if c.id == last_client_id %} selected {% endif %}>
+                                    {{ c.name }}
+                                </option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">

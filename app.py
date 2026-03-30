@@ -1,8 +1,8 @@
 import os, uuid
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 from models import db, Item, Place, Client, DayRecord, User
-from datetime import date
-from sqlalchemy import func
+from datetime import datetime
+from sqlalchemy import func, desc
 
 app = Flask(__name__)
 app.secret_key = "trackit_secret_key_2026"
@@ -48,16 +48,34 @@ def inventory():
     search_query = request.args.get('search', '')
 
     if request.method == 'POST':
+        # --- NEW: BULK SAVE LOGIC ---
+        if 'bulk_save' in request.form:
+            item_ids = request.form.getlist('item_ids[]')
+            quantities = request.form.getlist('quantities[]')
+            
+            for i_id, qty in zip(item_ids, quantities):
+                item = Item.query.filter_by(id=i_id, user_id=user_id).first()
+                if item:
+                    item.quantity = int(qty)
+            db.session.commit()
+            return redirect(url_for('inventory'))
+
+        # --- EXISTING: ADD NEW ITEM LOGIC ---
         name = request.form.get('name').strip()
         qty = int(request.form.get('qty'))
         item = Item.query.filter_by(user_id=user_id).filter(Item.name.ilike(name)).first()
-        if item: item.quantity += qty
-        else: db.session.add(Item(name=name, quantity=qty, user_id=user_id))
+        if item: 
+            item.quantity += qty
+        else: 
+            db.session.add(Item(name=name, quantity=qty, user_id=user_id))
         db.session.commit()
         return redirect(url_for('inventory'))
 
-    items = Item.query.filter_by(user_id=user_id)
-    if search_query: items = items.filter(Item.name.ilike(f"%{search_query}%"))
+    # Sorting items A-Z makes bulk editing much easier
+    items = Item.query.filter_by(user_id=user_id).order_by(Item.name)
+    if search_query: 
+        items = items.filter(Item.name.ilike(f"%{search_query}%"))
+        
     return render_template('inventory.html', items=items.all(), search_query=search_query)
 
 @app.route('/record', methods=['GET', 'POST'])
@@ -65,13 +83,15 @@ def record():
     if 'user_id' not in session: return redirect(url_for('login'))
     place_id = session.get('current_place_id')
     
-    # 1. Location Selection
+    # 1. Location Selection (Ordered A-Z)
     if not place_id:
         if request.method == 'POST':
             session['current_place_id'] = request.form['place_id']
             session['temp_entries'] = []
             return redirect(url_for('record'))
-        return render_template('select_place.html', places=Place.query.all())
+        # Added .order_by(Place.name)
+        return render_template('select_place.html', 
+                               places = Place.query.filter_by(is_active=True).order_by(Place.name).all())
 
     # 2. Add/Merge Entry Logic
     if request.method == 'POST' and 'add_entry' in request.form:
@@ -79,20 +99,32 @@ def record():
         client_id = int(request.form['client_id'])
         qty = int(request.form['qty'])
         
+        item = Item.query.get(item_id)
         temp_list = session.get('temp_entries', [])
+        
+        # --- NEW: STOCK GUARD START ---
+        # 1. Calculate how many are ALREADY in the basket for this specific item
+        # (We only count entries where is_returned is False, because those take stock away)
+        already_in_basket = sum(e['qty'] for e in temp_list if e['item_id'] == item_id and not e.get('is_returned'))
+        
+        # 2. Check if the New Qty + Current Basket exceeds what you actually own
+        if (already_in_basket + qty) > item.quantity:
+            flash(f"Not enough stock! You only have {item.quantity}", "danger")
+            return redirect(url_for('record'))
+        # --- STOCK GUARD END ---
+        
+        # STICKY CLIENT: Save the selection
+        session['last_client_id'] = client_id
         
         # --- MERGE CHECK START ---
         found = False
         for entry in temp_list:
-            # If the Client and Item both match, just add the quantity
             if entry['client_id'] == client_id and entry['item_id'] == item_id:
                 entry['qty'] += qty
                 found = True
                 break
         
-        # If no match was found, create a brand new row
         if not found:
-            item = Item.query.get(item_id)
             client = Client.query.get(client_id)
             temp_list.append({
                 'id': str(uuid.uuid4()), 
@@ -103,14 +135,13 @@ def record():
                 'qty': qty, 
                 'is_returned': False
             })
-        # --- MERGE CHECK END ---
         
         session['temp_entries'] = temp_list
         session.modified = True
         return redirect(url_for('record'))
 
-    # 3. Live Stock Calculation (Same as before)
-    db_items = Item.query.filter_by(user_id=session['user_id']).all()
+    # 3. Live Stock Calculation (Ordered A-Z)
+    db_items = Item.query.filter_by(user_id=session['user_id']).order_by(Item.name).all()
     temp_entries = session.get('temp_entries', [])
     
     display_items = []
@@ -119,6 +150,9 @@ def record():
         live_qty = max(0, item.quantity - in_basket)
         display_items.append({'id': item.id, 'name': item.name, 'live_qty': live_qty})
 
+    # 4. Grouping & Sorting Clients A-Z
+    clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
+    
     grouped_entries = {}
     for entry in temp_entries:
         c_name = entry['client_name']
@@ -129,57 +163,139 @@ def record():
     return render_template('records.html', 
                            place=Place.query.get(place_id), 
                            items=display_items, 
-                           clients=Client.query.all(), 
-                           grouped_entries=grouped_entries)
+                           clients=clients, 
+                           grouped_entries=grouped_entries,
+                           last_client_id=session.get('last_client_id')) # Pass the sticky ID
 
 @app.route('/save_day')
 def save_day():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    
     temp_entries = session.get('temp_entries', [])
     place_id = session.get('current_place_id')
-    for e in temp_entries:
-        rec = DayRecord(item_id=e['item_id'], place_id=place_id, client_id=e['client_id'], 
-                        user_id=session['user_id'], quantity_out=e['qty'], is_returned=e['is_returned'])
-        if not e['is_returned']:
-            item = Item.query.get(e['item_id'])
-            item.quantity -= e['qty']
-        db.session.add(rec)
-    db.session.commit()
-    session.pop('temp_entries', None); session.pop('current_place_id', None)
+    
+    if not temp_entries or not place_id:
+        flash("No records to save!", "warning")
+        return redirect(url_for('record'))
+
+    try:
+        for entry in temp_entries:
+            # 1. Create the permanent record
+            new_record = DayRecord(
+                item_id=entry['item_id'],
+                place_id=place_id,
+                client_id=entry['client_id'],
+                user_id=session['user_id'],
+                quantity_out=entry['qty'],
+                is_returned=entry['is_returned'],
+                timestamp=datetime.now() # Ensure this is imported from datetime
+            )
+            db.session.add(new_record)
+            
+            # 2. Subtract from Inventory ONLY if not already returned
+            if not entry['is_returned']:
+                item = Item.query.get(entry['item_id'])
+                if item:
+                    item.quantity -= entry['qty']
+
+        db.session.commit()
+        
+        # 3. CLEAR THE SESSION so the basket is empty for the next run
+        session.pop('temp_entries', None)
+        session.pop('current_place_id', None)
+        
+        flash("Records saved to history successfully!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error saving records: {str(e)}", "danger")
+
     return redirect(url_for('history'))
 
 @app.route('/history')
 def history():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
-    query = db.session.query(func.date(DayRecord.timestamp).label('day'), DayRecord.place_id, 
-                             Place.name.label('place_name'), func.count(DayRecord.id).label('total_items')
-                             ).join(Place).group_by('day', DayRecord.place_id).order_by(db.desc('day'))
-    pagination = query.paginate(page=page, per_page=per_page)
-    return render_template('history_sessions.html', sessions=pagination.items, pagination=pagination, 
-                           places=Place.query.all(), per_page=per_page)
+    per_page = 10
+
+    # We paginate the grouped query
+    pagination = db.session.query(
+        func.date(DayRecord.timestamp).label('day'),
+        DayRecord.place_id,
+        Place.name.label('place_name')
+    ).join(Place).filter(DayRecord.user_id == session['user_id'])\
+     .group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
+     .order_by(desc('day')).paginate(page=page, per_page=per_page)
+
+    return render_template('history.html', pagination=pagination)
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     if 'user_id' not in session: return redirect(url_for('login'))
+    
     user = User.query.get(session['user_id'])
+    
+    # Use distinct page variables for Places and Clients
     page_p = request.args.get('page_p', 1, type=int)
     page_c = request.args.get('page_c', 1, type=int)
     per_page = request.args.get('per_page', 5, type=int)
 
     if request.method == 'POST':
+        # 1. Create Staff Account
         if 'create_account' in request.form and user.role == 'boss':
-            db.session.add(User(username=request.form['new_username'], password=request.form['new_password'], role='staff'))
+            existing_user = User.query.filter_by(username=request.form['new_username']).first()
+            if not existing_user:
+                db.session.add(User(username=request.form['new_username'], password=request.form['new_password'], role='staff'))
+            else:
+                flash("Username already exists!", "danger")
+
+        # 2. Add Place (with duplicate check)
         elif 'add_place' in request.form:
-            db.session.add(Place(name=request.form['place_name']))
+            name = request.form['place_name'].strip()
+            # Look for ANY place with this name, active or not
+            existing_place = Place.query.filter_by(name=name).first()
+            
+            if existing_place:
+                if not existing_place.is_active:
+                    existing_place.is_active = True # Restore it
+                    flash(f"'{name}' has been restored.", "success")
+                else:
+                    flash(f"'{name}' already exists in your list!", "warning")
+            else:
+                db.session.add(Place(name=name))
+                flash(f"Added '{name}' successfully.", "success")
+
+        # 3. Add Client (with duplicate check)
         elif 'add_client' in request.form:
-            db.session.add(Client(name=request.form['client_name']))
+            name = request.form['client_name'].strip()
+            existing_client = Client.query.filter_by(name=name).first()
+            
+            if existing_client:
+                if not existing_client.is_active:
+                    existing_client.is_active = True # Restore it
+                    flash(f"Client '{name}' has been restored.", "success")
+                else:
+                    flash(f"Client '{name}' already exists!", "warning")
+            else:
+                db.session.add(Client(name=name))
+                flash(f"Added '{name}' successfully.", "success")
+
         db.session.commit()
         return redirect(url_for('settings'))
 
-    p_pag = Place.query.paginate(page=page_p, per_page=per_page)
-    c_pag = Client.query.paginate(page=page_c, per_page=per_page)
+    # --- THE FIX: Use page_p and page_c here ---
+    # Also added .order_by(name) for A-Z sorting
+    p_pag = Place.query.filter_by(is_active=True).order_by(Place.name).paginate(page=page_p, per_page=per_page)
+    c_pag = Client.query.filter_by(is_active=True).order_by(Client.name).paginate(page=page_c, per_page=per_page)
+    
     staff = User.query.filter_by(role='staff').all() if user.role == 'boss' else []
-    return render_template('settings.html', places_pagination=p_pag, clients_pagination=c_pag, staff_members=staff, user=user, per_page=per_page)
+    
+    return render_template('settings.html', 
+                           places_pagination=p_pag, 
+                           clients_pagination=c_pag, 
+                           staff_members=staff, 
+                           user=user, 
+                           per_page=per_page)
 
 @app.route('/reset_session')
 def reset_session():
@@ -350,31 +466,18 @@ def delete_session(ts, place_id):
 
 @app.route('/delete_entry/<string:type>/<int:id>')
 def delete_entry(type, id):
-    if 'user_id' not in session: 
-        return redirect(url_for('login'))
+    if 'user_id' not in session: return redirect(url_for('login'))
     
-    try:
-        if type == 'place':
-            target = Place.query.get(id)
-            msg = f"Location '{target.name}' deleted."
-        elif type == 'client':
-            target = Client.query.get(id)
-            msg = f"Client '{target.name}' deleted."
-        else:
-            flash("Invalid deletion type.", "danger")
-            return redirect(url_for('settings'))
+    if type == 'place':
+        target = Place.query.get(id)
+    else:
+        target = Client.query.get(id)
 
-        if target:
-            db.session.delete(target)
-            db.session.commit()
-            flash(msg, "warning")
-        else:
-            flash("Item not found.", "danger")
-            
-    except Exception as e:
-        db.session.rollback()
-        flash("Could not delete. This item might be linked to existing history records.", "danger")
-
+    if target:
+        target.is_active = False  # This hides it from dropdowns
+        db.session.commit()
+        flash(f"{type.capitalize()} archived. History remains intact.", "warning")
+    
     return redirect(url_for('settings'))
 
 if __name__ == '__main__':

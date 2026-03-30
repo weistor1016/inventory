@@ -12,13 +12,15 @@
                 <option value="10" {{ 'selected' if per_page == 10 }}>10</option>
                 <option value="20" {{ 'selected' if per_page == 20 }}>20</option>
             </select>
+            <input type="hidden" name="page_p" value="{{ places_pagination.page }}">
+            <input type="hidden" name="page_c" value="{{ clients_pagination.page }}">
         </form>
     </div>
 
     <div class="row">
         <div class="col-md-6 mb-4">
             <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
+                <div class="card-body d-flex flex-column">
                     <h5 class="fw-bold mb-3"><i class="bi bi-geo-alt text-primary"></i> Locations</h5>
                     <form method="POST" class="mb-3">
                         <div class="input-group">
@@ -27,35 +29,39 @@
                         </div>
                     </form>
                     
-                    <ul class="list-group list-group-flush mb-3">
+                    <ul class="list-group list-group-flush mb-auto">
                         {% for p in places_pagination.items %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                            {{ p.name }}
-                            <a href="{{ url_for('delete_entry', type='place', id=p.id) }}" class="text-danger" onclick="return confirm('Delete this location?')">
-                                <i class="bi bi-x-circle"></i>
+                            <span>{{ p.name }}</span>
+                            <a href="{{ url_for('delete_entry', type='place', id=p.id) }}" class="text-danger" onclick="return confirm('Delete this location? History will be kept.')">
+                                <i class="bi bi-trash"></i>
                             </a>
                         </li>
+                        {% else %}
+                        <li class="list-group-item text-center text-muted py-4">No locations added yet.</li>
                         {% endfor %}
                     </ul>
 
-                    <nav>
-                        <ul class="pagination pagination-sm justify-content-center">
+                    {% if places_pagination.pages > 1 %}
+                    <nav class="mt-3">
+                        <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not places_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, per_page=per_page) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, page_c=clients_pagination.page, per_page=per_page) }}">Prev</a>
                             </li>
-                            <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ places_pagination.page }}</span></li>
+                            <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ places_pagination.page }} / {{ places_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not places_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, per_page=per_page) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, page_c=clients_pagination.page, per_page=per_page) }}">Next</a>
                             </li>
                         </ul>
                     </nav>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <div class="col-md-6 mb-4">
             <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
+                <div class="card-body d-flex flex-column">
                     <h5 class="fw-bold mb-3"><i class="bi bi-people text-success"></i> Clients</h5>
                     <form method="POST" class="mb-3">
                         <div class="input-group">
@@ -64,28 +70,32 @@
                         </div>
                     </form>
 
-                    <ul class="list-group list-group-flush mb-3">
+                    <ul class="list-group list-group-flush mb-auto">
                         {% for c in clients_pagination.items %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                            {{ c.name }}
-                            <a href="{{ url_for('delete_entry', type='client', id=c.id) }}" class="text-danger" onclick="return confirm('Delete this client?')">
-                                <i class="bi bi-x-circle"></i>
+                            <span>{{ c.name }}</span>
+                            <a href="{{ url_for('delete_entry', type='client', id=c.id) }}" class="text-danger" onclick="return confirm('Delete this client? History will be kept.')">
+                                <i class="bi bi-trash"></i>
                             </a>
                         </li>
+                        {% else %}
+                        <li class="list-group-item text-center text-muted py-4">No clients added yet.</li>
                         {% endfor %}
                     </ul>
 
-                    <nav>
-                        <ul class="pagination pagination-sm justify-content-center">
+                    {% if clients_pagination.pages > 1 %}
+                    <nav class="mt-3">
+                        <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, per_page=per_page) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, page_p=places_pagination.page, per_page=per_page) }}">Prev</a>
                             </li>
-                            <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ clients_pagination.page }}</span></li>
+                            <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ clients_pagination.page }} / {{ clients_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, per_page=per_page) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, page_p=places_pagination.page, per_page=per_page) }}">Next</a>
                             </li>
                         </ul>
                     </nav>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -111,24 +121,26 @@
                         </div>
                     </form>
 
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Username</th>
-                                <th>Role</th>
-                                <th class="text-end">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for staff in staff_members %}
-                            <tr>
-                                <td class="fw-bold">{{ staff.username }}</td>
-                                <td><span class="badge bg-info text-dark">{{ staff.role }}</span></td>
-                                <td class="text-end text-success"><i class="bi bi-check-circle-fill"></i> Active</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th class="text-end">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for staff in staff_members %}
+                                <tr>
+                                    <td class="fw-bold">{{ staff.username }}</td>
+                                    <td><span class="badge bg-info text-dark">{{ staff.role|capitalize }}</span></td>
+                                    <td class="text-end text-success"><i class="bi bi-check-circle-fill me-1"></i>Active</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
