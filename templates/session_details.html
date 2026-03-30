@@ -1,33 +1,66 @@
 {% extends "base.html" %}
+
 {% block content %}
 <div class="mb-4">
-    <a href="{{ url_for('history') }}" class="btn btn-link p-0 text-decoration-none text-muted"><i class="bi bi-arrow-left"></i> Back to History</a>
-    <h2 class="fw-bold mt-2">📍 {{ place.name }}</h2>
-    <p class="text-muted">Log for {{ ts }}</p>
+    <a href="{{ url_for('history') }}" class="btn btn-link p-0 text-decoration-none text-muted">
+        <i class="bi bi-arrow-left"></i> Back to History
+    </a>
+    <div class="d-flex justify-content-between align-items-end mt-2">
+        <div>
+            <h2 class="fw-bold mb-0">📍 {{ place.name }}</h2>
+            <p class="text-muted mb-0">Log for {{ ts }}</p>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-light text-dark border px-3 py-2">
+                <i class="bi bi-person-badge me-1 text-primary"></i>
+                Recorded by: <strong>{{ records[0].author.display_name or records[0].author.username }}</strong>
+            </span>
+        </div>
+    </div>
 </div>
 
 {% for client_name, items in grouped_data.items() %}
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-primary text-white py-3">
-        <h5 class="mb-0 fw-bold"><i class="bi bi-person-circle"></i> Client: {{ client_name }}</h5>
+        <h5 class="mb-0 fw-bold"><i class="bi bi-person-circle me-2"></i>Client: {{ client_name }}</h5>
     </div>
     <div class="table-responsive">
         <table class="table align-middle mb-0">
             <thead class="table-light">
-                <tr><th>Item Name</th><th class="text-center">Qty</th><th class="text-center">Status</th><th class="text-end">Action</th></tr>
+                <tr>
+                    <th>Item Name</th>
+                    <th class="text-center">Qty</th>
+                    <th class="text-center">Status</th>
+                    <th class="text-end">Action</th>
+                </tr>
             </thead>
             <tbody>
                 {% for r in items %}
-                <tr class="{{ 'table-success' if r.is_returned else '' }}">
-                    <td>{{ r.item.name }}</td>
+                <tr class="{{ 'table-success opacity-75' if r.is_returned else '' }}">
+                    <td class="fw-bold">
+                        {{ r.item.name }}
+                        {% if r.item_is_archived %}
+                            <small class="text-muted ms-2">(Archived)</small>
+                        {% endif %}
+                    </td>
                     <td class="text-center">{{ r.quantity_out }}</td>
                     <td class="text-center">
-                        <span class="badge {{ 'bg-success' if r.is_returned else 'bg-warning text-dark' }}">
-                            {{ 'Returned' if r.is_returned else 'Out' }}
+                        <span class="badge {{ 'bg-success' if r.is_returned else ('bg-secondary' if r.item_is_archived else 'bg-warning text-dark') }} px-3 py-2">
+                            <i class="bi {{ 'bi-check-lg' if r.is_returned else ('bi-archive-fill' if r.item_is_archived else 'bi-box-arrow-up') }} me-1"></i>
+                            {{ 'Returned' if r.is_returned else ('Out (Archived)' if r.item_is_archived else 'Out') }}
                         </span>
                     </td>
                     <td class="text-end">
-                        <a href="{{ url_for('toggle_return', record_id=r.id) }}" class="btn btn-sm btn-outline-secondary">Toggle</a>
+                        {% if r.item_is_archived %}
+                            <button class="btn btn-sm btn-light border text-muted px-3" disabled>
+                                <i class="bi bi-lock-fill"></i> Locked
+                            </button>
+                        {% else %}
+                            <a href="{{ url_for('toggle_return', record_id=r.id) }}" 
+                               class="btn btn-sm {{ 'btn-success' if r.is_returned else 'btn-outline-primary' }} px-3 shadow-sm">
+                                <i class="bi bi-arrow-left-right me-1"></i> Toggle
+                            </a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

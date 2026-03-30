@@ -7,14 +7,17 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
+    
+    # ADD THESE TWO LINES:
     role = db.Column(db.String(20), default='staff') # 'boss' or 'staff'
+    display_name = db.Column(db.String(100), nullable=True)
 
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, default=0)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    # ❌ I DELETED the 'records = db.relationship...' line from here
+    is_active = db.Column(db.Boolean, default=True)
 
 class Place(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -35,13 +38,17 @@ class DayRecord(db.Model):
     item_id = db.Column(db.Integer, db.ForeignKey('item.id'))
     place_id = db.Column(db.Integer, db.ForeignKey('place.id'))
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    # This must match the table name 'user'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) 
     
     quantity_out = db.Column(db.Integer, nullable=False)
     is_returned = db.Column(db.Boolean, default=False)
 
-    # Relationships mapped HERE instead. 
-    # I changed the backref to 'records' so if you ever type Item.records in your code, it still works perfectly!
+    # Relationships mapped HERE
     item = db.relationship('Item', backref='records')
     place = db.relationship('Place', backref='records')
     client = db.relationship('Client', backref='records')
+    
+    # ADD THIS LINE:
+    # This allows Jinja to use 'r.author.display_name'
+    author = db.relationship('User', backref='user_records')

@@ -21,6 +21,13 @@ with app.app_context():
         ])
         db.session.commit()
 
+@app.context_processor
+def inject_user():
+    if 'user_id' in session:
+        user = User.query.get(session['user_id'])
+        return dict(current_user=user)
+    return dict(current_user=None)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -30,6 +37,19 @@ def login():
             return redirect(url_for('index'))
         flash("Invalid Credentials", "danger")
     return render_template('login.html')
+
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    user = User.query.get(session['user_id'])
+    
+    if request.method == 'POST':
+        user.display_name = request.form.get('display_name')
+        db.session.commit()
+        flash("Profile updated!", "success")
+        return redirect(url_for('inventory'))
+        
+    return render_template('profile.html', user=user)
 
 @app.route('/logout')
 def logout():
@@ -44,74 +64,63 @@ def index():
 @app.route('/inventory', methods=['GET', 'POST'])
 def inventory():
     if 'user_id' not in session: return redirect(url_for('login'))
-    user_id = session['user_id']
+    user = db.session.get(User, session['user_id'])
     
-    # 1. Get parameters from the URL (GET request)
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
     search_query = request.args.get('search', '')
 
     if request.method == 'POST':
-        # --- BULK SAVE LOGIC ---
+        # --- BULK SAVE ---
         if 'bulk_save' in request.form:
             item_ids = request.form.getlist('item_ids[]')
             quantities = request.form.getlist('quantities[]')
             for i_id, qty in zip(item_ids, quantities):
-                item = Item.query.filter_by(id=i_id, user_id=user_id).first()
-                if item:
+                # STRICT: Users (and Boss) can ONLY edit items they personally own
+                item = Item.query.filter_by(id=i_id, user_id=user.id).first()
+                if item and item.is_active:
                     item.quantity = int(qty)
             db.session.commit()
 
-        # --- ADD NEW ITEM LOGIC ---
+        # --- ADD NEW ITEM ---
         else:
             name = request.form.get('name').strip()
             qty = int(request.form.get('qty'))
-            item = Item.query.filter_by(user_id=user_id).filter(Item.name.ilike(name)).first()
+            # Find item tied specifically to the logged-in user
+            item = Item.query.filter_by(user_id=user.id).filter(Item.name.ilike(name)).first()
             if item: 
                 item.quantity += qty
+                item.is_active = True 
             else: 
-                db.session.add(Item(name=name, quantity=qty, user_id=user_id))
+                db.session.add(Item(name=name, quantity=qty, user_id=user.id, is_active=True))
             db.session.commit()
 
-        # --- AUTO-REMOVE EMPTY ENTRIES ---
-        zero_items = Item.query.filter_by(user_id=user_id, quantity=0).all()
-        for item in zero_items:
-            lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
-                DayRecord.item_id == item.id,
-                DayRecord.is_returned == False
-            ).scalar() or 0
-            
-            if lent_count == 0:
-                try:
-                    db.session.delete(item)
-                except:
-                    db.session.rollback() 
-        
-        db.session.commit()
-        flash("Inventory updated and empty items cleared.", "success")
-        # Ensure we redirect back with the same filters active
+        flash("Inventory updated.", "success")
         return redirect(url_for('inventory', search=search_query, per_page=per_page, page=page))
 
-    # --- 2. PAGINATED FETCH ---
-    items_query = Item.query.filter_by(user_id=user_id).order_by(Item.name)
+    # --- FETCH LOGIC ---
+    # Subquery for items currently lent out (to ensure archived items with debt still show)
+    lent_subquery = db.session.query(DayRecord.item_id).filter(DayRecord.is_returned == False).distinct().subquery()
+
+    # STRICT PRIVACY: Every user (Boss included) only sees THEIR own inventory entries
+    items_query = Item.query.filter_by(user_id=user.id).filter(
+        db.or_(Item.is_active == True, Item.id.in_(lent_subquery))
+    )
+
     if search_query: 
         items_query = items_query.filter(Item.name.ilike(f"%{search_query}%"))
     
-    # Use paginate instead of all()
-    pagination = items_query.paginate(page=page, per_page=per_page)
-    items_list = pagination.items
-
-    # 3. Calculate Lent Out for CURRENT PAGE items only (much faster!)
-    for item in items_list:
-        lent_count = db.session.query(func.sum(DayRecord.quantity_out)).filter(
-            DayRecord.item_id == item.id,
-            DayRecord.is_returned == False
+    pagination = items_query.order_by(Item.is_active.desc(), Item.name).paginate(page=page, per_page=per_page)
+    
+    for item in pagination.items:
+        # Check lent out count specifically for this item
+        item.lent_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
+            DayRecord.item_id == item.id, DayRecord.is_returned == False
         ).scalar() or 0
-        item.lent_out = lent_count
 
     return render_template('inventory.html', 
                            pagination=pagination, 
-                           items=items_list, 
+                           items=pagination.items, 
                            search_query=search_query, 
                            per_page=per_page)
 
@@ -266,12 +275,11 @@ def save_day():
 @app.route('/history')
 def history():
     if 'user_id' not in session: return redirect(url_for('login'))
+    user = db.session.get(User, session['user_id'])
     
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
-    
     f_date = request.args.get('filter_date', '')
-    # f_place now captures text (the name) instead of just an ID
     f_place = request.args.get('filter_place', '').strip()
 
     query = db.session.query(
@@ -279,12 +287,15 @@ def history():
         DayRecord.place_id,
         Place.name.label('place_name'),
         func.sum(case((DayRecord.is_returned == False, 1), else_=0)).label('unreturned_count')
-    ).join(Place).filter(DayRecord.user_id == session['user_id'])
+    ).join(Place)
+
+    # --- BOSS SUPER-VISION ---
+    # Boss sees everyone's history; Staff only sees their own.
+    if user.role != 'boss':
+        query = query.filter(DayRecord.user_id == user.id)
 
     if f_date:
         query = query.filter(func.date(DayRecord.timestamp) == f_date)
-    
-    # NEW: Filter by Place Name (supports deleted/archived places)
     if f_place:
         query = query.filter(Place.name.ilike(f"%{f_place}%"))
 
@@ -427,22 +438,31 @@ def remove_entry(entry_id):
 
 @app.route('/history/<ts>/<int:place_id>')
 def session_details(ts, place_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    if 'user_id' not in session: return redirect(url_for('login'))
+    user = db.session.get(User, session['user_id'])
     
-    # 1. Fetch the Place object to show the name at the top
-    place = Place.query.get_or_404(place_id)
+    place = db.session.get(Place, place_id)
     
-    # 2. Get all records for that specific day and location
-    # We use func.date() to match the date string from the URL
-    records = DayRecord.query.filter(
+    # Base Filter
+    filters = [
         func.date(DayRecord.timestamp) == ts,
         DayRecord.place_id == place_id
-    ).all()
+    ]
     
-    # 3. Group the records by Client Name for the UI
+    # --- BOSS LOGIC ---
+    if user.role != 'boss':
+        filters.append(DayRecord.user_id == user.id)
+    
+    records = DayRecord.query.filter(*filters).all()
+    
+    if not records:
+        flash("No records found or Access Denied.", "warning")
+        return redirect(url_for('history'))
+
     grouped_data = {}
     for r in records:
+        # Pass archiving status to the UI
+        r.item_is_archived = not r.item.is_active
         client_name = r.client.name
         if client_name not in grouped_data:
             grouped_data[client_name] = []
@@ -451,7 +471,8 @@ def session_details(ts, place_id):
     return render_template('session_details.html', 
                            grouped_data=grouped_data, 
                            place=place, 
-                           ts=ts)
+                           ts=ts,
+                           records=records)
 
 @app.route('/update_item/<int:id>', methods=['POST'])
 def update_item(id):
