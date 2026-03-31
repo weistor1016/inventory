@@ -8,9 +8,10 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
     
-    # ADD THESE TWO LINES:
+    # Added fields:
     role = db.Column(db.String(20), default='staff') # 'boss' or 'staff'
     display_name = db.Column(db.String(100), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
 
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -43,7 +44,7 @@ class DayRecord(db.Model):
     
     quantity_out = db.Column(db.Integer, nullable=False)
     is_returned = db.Column(db.Boolean, default=False)
-
+    is_sold = db.Column(db.Boolean, default=False)
     # Relationships mapped HERE
     item = db.relationship('Item', backref='records')
     place = db.relationship('Place', backref='records')

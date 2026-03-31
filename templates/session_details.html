@@ -36,7 +36,7 @@
             </thead>
             <tbody>
                 {% for r in items %}
-                <tr class="{{ 'table-success opacity-75' if r.is_returned else '' }}">
+                <tr class="{{ 'table-success opacity-75' if r.is_returned else ('table-dark opacity-50' if r.is_sold else '') }}">
                     <td class="fw-bold">
                         {{ r.item.name }}
                         {% if r.item_is_archived %}
@@ -45,10 +45,23 @@
                     </td>
                     <td class="text-center">{{ r.quantity_out }}</td>
                     <td class="text-center">
-                        <span class="badge {{ 'bg-success' if r.is_returned else ('bg-secondary' if r.item_is_archived else 'bg-warning text-dark') }} px-3 py-2">
-                            <i class="bi {{ 'bi-check-lg' if r.is_returned else ('bi-archive-fill' if r.item_is_archived else 'bi-box-arrow-up') }} me-1"></i>
-                            {{ 'Returned' if r.is_returned else ('Out (Archived)' if r.item_is_archived else 'Out') }}
-                        </span>
+                        {% if r.is_sold %}
+                            <span class="badge bg-dark px-3 py-2">
+                                <i class="bi bi-cash-stack me-1"></i> Sold
+                            </span>
+                        {% elif r.is_returned %}
+                            <span class="badge bg-success px-3 py-2">
+                                <i class="bi bi-check-lg me-1"></i> Returned
+                            </span>
+                        {% elif r.item_is_archived %}
+                            <span class="badge bg-secondary px-3 py-2 text-white">
+                                <i class="bi bi-archive-fill me-1"></i> Out (Archived)
+                            </span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark px-3 py-2">
+                                <i class="bi bi-box-arrow-up me-1"></i> Out
+                            </span>
+                        {% endif %}
                     </td>
                     <td class="text-end">
                         {% if r.item_is_archived %}
@@ -56,10 +69,24 @@
                                 <i class="bi bi-lock-fill"></i> Locked
                             </button>
                         {% else %}
-                            <a href="{{ url_for('toggle_return', record_id=r.id) }}" 
-                               class="btn btn-sm {{ 'btn-success' if r.is_returned else 'btn-outline-primary' }} px-3 shadow-sm">
-                                <i class="bi bi-arrow-left-right me-1"></i> Toggle
-                            </a>
+                            <div class="btn-group shadow-sm">
+                                {% if not r.is_sold %}
+                                <a href="{{ url_for('toggle_return', record_id=r.id) }}" 
+                                   class="btn btn-sm {{ 'btn-success' if r.is_returned else 'btn-outline-primary' }}" 
+                                   title="Toggle Return">
+                                    <i class="bi bi-arrow-left-right"></i> Return
+                                </a>
+                                {% endif %}
+                                
+                                {% if not r.is_returned %}
+                                <a href="{{ url_for('toggle_sold', record_id=r.id) }}" 
+                                   class="btn btn-sm {{ 'btn-dark text-white' if r.is_sold else 'btn-outline-dark' }}" 
+                                   onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold? Inventory will NOT be replenished.' }}')"
+                                   title="{{ 'Unmark as Sold' if r.is_sold else 'Mark as Sold' }}">
+                                    <i class="bi bi-cart-plus"></i> {{ 'Undo Sold' if r.is_sold else 'Sell' }}
+                                </a>
+                                {% endif %}
+                            </div>
                         {% endif %}
                     </td>
                 </tr>

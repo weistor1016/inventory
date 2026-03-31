@@ -33,6 +33,9 @@ def login():
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form.get('username'), password=request.form.get('password')).first()
         if user:
+            if hasattr(user, 'is_active') and not user.is_active:
+                flash("Account is deactivated.", "danger")
+                return redirect(url_for('login'))
             session.update({'user_id': user.id, 'role': user.role, 'username': user.username})
             return redirect(url_for('index'))
         flash("Invalid Credentials", "danger")
@@ -100,7 +103,7 @@ def inventory():
 
     # --- FETCH LOGIC ---
     # Subquery for items currently lent out (to ensure archived items with debt still show)
-    lent_subquery = db.session.query(DayRecord.item_id).filter(DayRecord.is_returned == False).distinct().subquery()
+    lent_subquery = db.session.query(DayRecord.item_id).filter(DayRecord.is_returned == False, DayRecord.is_sold == False).distinct().subquery()
 
     # STRICT PRIVACY: Every user (Boss included) only sees THEIR own inventory entries
     items_query = Item.query.filter_by(user_id=user.id).filter(
@@ -115,7 +118,7 @@ def inventory():
     for item in pagination.items:
         # Check lent out count specifically for this item
         item.lent_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
-            DayRecord.item_id == item.id, DayRecord.is_returned == False
+            DayRecord.item_id == item.id, DayRecord.is_returned == False, DayRecord.is_sold == False
         ).scalar() or 0
 
     return render_template('inventory.html', 
@@ -155,7 +158,8 @@ def record():
         
         # 2. Check if the New Qty + Current Basket exceeds what you actually own
         if (already_in_basket + qty) > item.quantity:
-            flash(f"Not enough stock! You only have {item.quantity}", "danger")
+            remaining = item.quantity - already_in_basket
+            flash(f"Not enough stock! You only have {remaining} left available to add.", "danger")
             return redirect(url_for('record'))
         # --- STOCK GUARD END ---
         
@@ -272,6 +276,28 @@ def save_day():
 
     return redirect(url_for('history'))
 
+@app.route('/toggle_sold/<int:record_id>')
+def toggle_sold(record_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    
+    record = db.session.get(DayRecord, record_id)
+    item = db.session.get(Item, record.item_id)
+
+    if not item.is_active:
+        flash("Cannot modify archived items.", "warning")
+        return redirect(request.referrer)
+
+    if record.is_sold:
+        record.is_sold = False
+        flash(f"Unmarked {item.name} as Sold.", "info")
+    else:
+        record.is_sold = True
+        record.is_returned = False 
+        flash(f"{item.name} marked as Sold.", "success")
+    
+    db.session.commit()
+    return redirect(request.referrer)
+
 @app.route('/history')
 def history():
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -286,7 +312,7 @@ def history():
         func.date(DayRecord.timestamp).label('day'),
         DayRecord.place_id,
         Place.name.label('place_name'),
-        func.sum(case((DayRecord.is_returned == False, 1), else_=0)).label('unreturned_count')
+        func.sum(case((db.and_(DayRecord.is_returned == False, DayRecord.is_sold == False), 1), else_=0)).label('unreturned_count')
     ).join(Place)
 
     # --- BOSS SUPER-VISION ---
@@ -319,13 +345,22 @@ def settings():
     page_p = request.args.get('page_p', 1, type=int)
     page_c = request.args.get('page_c', 1, type=int)
     per_page = request.args.get('per_page', 5, type=int)
+    search_p = request.args.get('search_p', '').strip()
+    search_c = request.args.get('search_c', '').strip()
 
     if request.method == 'POST':
         # 1. Create Staff Account
         if 'create_account' in request.form and user.role == 'boss':
             existing_user = User.query.filter_by(username=request.form['new_username']).first()
             if not existing_user:
-                db.session.add(User(username=request.form['new_username'], password=request.form['new_password'], role='staff'))
+                new_user = User(
+                    username=request.form['new_username'], 
+                    password=request.form['new_password'], 
+                    role='staff',
+                    display_name=request.form.get('new_display_name', '')
+                )
+                db.session.add(new_user)
+                flash(f"Staff {new_user.username} created successfully.", "success")
             else:
                 flash("Username already exists!", "danger")
 
@@ -365,14 +400,21 @@ def settings():
 
     # --- THE FIX: Use page_p and page_c here ---
     # Also added .order_by(name) for A-Z sorting
-    p_pag = Place.query.filter_by(is_active=True).order_by(Place.name).paginate(page=page_p, per_page=per_page)
-    c_pag = Client.query.filter_by(is_active=True).order_by(Client.name).paginate(page=page_c, per_page=per_page)
+    p_query = Place.query.filter_by(is_active=True)
+    if search_p: p_query = p_query.filter(Place.name.ilike(f"%{search_p}%"))
+    p_pag = p_query.order_by(Place.name).paginate(page=page_p, per_page=per_page)
+    
+    c_query = Client.query.filter_by(is_active=True)
+    if search_c: c_query = c_query.filter(Client.name.ilike(f"%{search_c}%"))
+    c_pag = c_query.order_by(Client.name).paginate(page=page_c, per_page=per_page)
     
     staff = User.query.filter_by(role='staff').all() if user.role == 'boss' else []
     
     return render_template('settings.html', 
                            places_pagination=p_pag, 
                            clients_pagination=c_pag, 
+                           search_p=search_p,
+                           search_c=search_c,
                            staff_members=staff, 
                            user=user, 
                            per_page=per_page)
@@ -528,7 +570,8 @@ def toggle_return(record_id):
         # Re-check lent out status
         still_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
             DayRecord.item_id == item.id,
-            DayRecord.is_returned == False
+            DayRecord.is_returned == False,
+            DayRecord.is_sold == False
         ).scalar() or 0
         
         if still_out == 0:
@@ -581,5 +624,57 @@ def delete_entry(type, id):
     
     return redirect(url_for('settings'))
 
+
+# --- BOSS STAFF MANAGEMENT ---
+@app.route('/staff/<int:staff_id>/update_password', methods=['POST'])
+def update_staff_password(staff_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    boss = User.query.get(session['user_id'])
+    if boss.role != 'boss': return "Access Denied", 403
+    
+    staff = User.query.get_or_404(staff_id)
+    new_password = request.form.get('new_password')
+    if new_password:
+        staff.password = new_password
+        db.session.commit()
+        flash(f"Password updated for {staff.username}.", "success")
+    return redirect(url_for('settings'))
+
+@app.route('/staff/<int:staff_id>/toggle_status', methods=['POST'])
+def toggle_staff_status(staff_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    boss = User.query.get(session['user_id'])
+    if boss.role != 'boss': return "Access Denied", 403
+    
+    staff = User.query.get_or_404(staff_id)
+    # Check if is_active exists (if not, add dynamically)
+    if not hasattr(staff, 'is_active') or staff.is_active is None:
+        staff.is_active = True
+    
+    staff.is_active = not staff.is_active
+    db.session.commit()
+    status_str = "activated" if staff.is_active else "deactivated"
+    flash(f"Staff account {staff.username} has been {status_str}.", "warning")
+    return redirect(url_for('settings'))
+
+@app.route('/staff/<int:staff_id>/delete', methods=['POST'])
+def delete_staff(staff_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    boss = User.query.get(session['user_id'])
+    if boss.role != 'boss': return "Access Denied", 403
+    
+    staff = User.query.get_or_404(staff_id)
+    # Re-assign or check records? We can just delete if cascade lets us, or we might need to handle foreign keys
+    try:
+        db.session.delete(staff)
+        db.session.commit()
+        flash(f"Staff account {staff.username} deleted permanently.", "danger")
+    except Exception as e:
+        db.session.rollback()
+        flash("Cannot delete staff with existing history records. Deactivate them instead.", "danger")
+        
+    return redirect(url_for('settings'))
+
 if __name__ == '__main__':
+
     app.run(host='0.0.0.0', port=5000, debug=True)

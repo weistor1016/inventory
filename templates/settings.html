@@ -21,7 +21,16 @@
         <div class="col-md-6 mb-4">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body d-flex flex-column">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-geo-alt text-primary"></i> Locations</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-geo-alt text-primary"></i> Locations</h5>
+                        <form method="GET" class="d-flex" style="max-width: 200px;">
+                            <input type="hidden" name="page_c" value="{{ clients_pagination.page }}">
+                            <input type="hidden" name="search_c" value="{{ search_c }}">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <input type="text" name="search_p" class="form-control form-control-sm me-1" placeholder="Search..." value="{{ search_p }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+                        </form>
+                    </div>
                     <form method="POST" class="mb-3">
                         <div class="input-group">
                             <input type="text" name="place_name" class="form-control" placeholder="Add new location..." required>
@@ -46,11 +55,11 @@
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not places_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, page_c=clients_pagination.page, per_page=per_page) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Prev</a>
                             </li>
                             <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ places_pagination.page }} / {{ places_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not places_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, page_c=clients_pagination.page, per_page=per_page) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Next</a>
                             </li>
                         </ul>
                     </nav>
@@ -62,7 +71,16 @@
         <div class="col-md-6 mb-4">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body d-flex flex-column">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-people text-success"></i> Clients</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-people text-success"></i> Clients</h5>
+                        <form method="GET" class="d-flex" style="max-width: 200px;">
+                            <input type="hidden" name="page_p" value="{{ places_pagination.page }}">
+                            <input type="hidden" name="search_p" value="{{ search_p }}">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <input type="text" name="search_c" class="form-control form-control-sm me-1" placeholder="Search..." value="{{ search_c }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+                        </form>
+                    </div>
                     <form method="POST" class="mb-3">
                         <div class="input-group">
                             <input type="text" name="client_name" class="form-control" placeholder="Add new client..." required>
@@ -87,11 +105,11 @@
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, page_p=places_pagination.page, per_page=per_page) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Prev</a>
                             </li>
                             <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ clients_pagination.page }} / {{ clients_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, page_p=places_pagination.page, per_page=per_page) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Next</a>
                             </li>
                         </ul>
                     </nav>
@@ -110,14 +128,17 @@
                     <p class="text-muted small">Create new accounts for employees. They see their own inventory but share these global Locations and Clients.</p>
                     
                     <form method="POST" class="row g-3 mb-4">
-                        <div class="col-md-5">
-                            <input type="text" name="new_username" class="form-control" placeholder="Staff Username" required>
+                        <div class="col-md-4">
+                            <input type="text" name="new_display_name" class="form-control" placeholder="Display Name (e.g., John)">
                         </div>
-                        <div class="col-md-5">
-                            <input type="password" name="new_password" class="form-control" placeholder="Temporary Password" required>
+                        <div class="col-md-3">
+                            <input type="text" name="new_username" class="form-control" placeholder="Login Username" required>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="password" name="new_password" class="form-control" placeholder="Temp Password" required>
                         </div>
                         <div class="col-md-2">
-                            <button type="submit" name="create_account" class="btn btn-primary w-100">Create Staff</button>
+                            <button type="submit" name="create_account" class="btn btn-primary w-100">Add Staff</button>
                         </div>
                     </form>
 
@@ -125,18 +146,84 @@
                         <table class="table table-hover align-middle">
                             <thead class="table-light">
                                 <tr>
+                                    <th>Name</th>
                                     <th>Username</th>
                                     <th>Role</th>
-                                    <th class="text-end">Status</th>
+                                    <th>Status</th>
+                                    <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for staff in staff_members %}
                                 <tr>
-                                    <td class="fw-bold">{{ staff.username }}</td>
+                                    <td class="fw-bold">{{ staff.display_name or '-' }}</td>
+                                    <td class="text-muted">{{ staff.username }}</td>
                                     <td><span class="badge bg-info text-dark">{{ staff.role|capitalize }}</span></td>
-                                    <td class="text-end text-success"><i class="bi bi-check-circle-fill me-1"></i>Active</td>
+                                    <td>
+                                        {% if staff.is_active %}
+                                            <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Active</span>
+                                        {% else %}
+                                            <span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Deactivated</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#staffModal{{ staff.id }}">
+                                            <i class="bi bi-gear-fill"></i> Manage
+                                        </button>
+                                    </td>
                                 </tr>
+                                
+                                <!-- Staff Management Modal -->
+                                <div class="modal fade" id="staffModal{{ staff.id }}" tabindex="-1" aria-hidden="true">
+                                  <div class="modal-dialog">
+                                    <div class="modal-content">
+                                      <div class="modal-header">
+                                        <h5 class="modal-title">Manage Staff: {{ staff.display_name or staff.username }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                      </div>
+                                      <div class="modal-body">
+                                        
+                                        <!-- View/Update Password -->
+                                        <div class="mb-4">
+                                            <h6 class="fw-bold">Security</h6>
+                                            <form action="{{ url_for('update_staff_password', staff_id=staff.id) }}" method="POST">
+                                                <div class="input-group mb-3">
+                                                    <span class="input-group-text">Current Password:</span>
+                                                    <input type="text" class="form-control" value="{{ staff.password }}" readonly>
+                                                </div>
+                                                <div class="input-group mb-3">
+                                                    <input type="text" name="new_password" class="form-control" placeholder="New Password" required>
+                                                    <button class="btn btn-primary" type="submit">Update</button>
+                                                </div>
+                                            </form>
+                                        </div>
+
+                                        <!-- Account Status -->
+                                        <div class="mb-4">
+                                            <h6 class="fw-bold">Account Status</h6>
+                                            <form action="{{ url_for('toggle_staff_status', staff_id=staff.id) }}" method="POST" class="d-inline">
+                                                {% if staff.is_active %}
+                                                    <p class="text-muted small">Deactivating will prevent this user from logging in.</p>
+                                                    <button class="btn btn-warning" type="submit"><i class="bi bi-pause-circle"></i> Deactivate Account</button>
+                                                {% else %}
+                                                    <p class="text-muted small">This account is currently deactivated.</p>
+                                                    <button class="btn btn-success" type="submit"><i class="bi bi-play-circle"></i> Reactivate Account</button>
+                                                {% endif %}
+                                            </form>
+                                        </div>
+
+                                        <!-- Danger Zone -->
+                                        <div class="mb-3 border-top pt-3">
+                                            <h6 class="fw-bold text-danger">Danger Zone</h6>
+                                            <form action="{{ url_for('delete_staff', staff_id=staff.id) }}" method="POST" class="d-inline" onsubmit="return confirm('WARNING: Permanently delete this staff account? This action cannot be undone and will fail if they have history records.');">
+                                                <button class="btn btn-outline-danger" type="submit"><i class="bi bi-trash-fill"></i> Delete Permanently</button>
+                                            </form>
+                                        </div>
+                                        
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
                                 {% endfor %}
                             </tbody>
                         </table>
