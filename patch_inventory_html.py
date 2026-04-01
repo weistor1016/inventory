@@ -1,4 +1,9 @@
-{% extends "base.html" %}
+import re
+
+with open('/mnt/c/Users/wei/Desktop/inventory/templates/inventory.html', 'r') as f:
+    content = f.read()
+
+replacement = """{% extends "base.html" %}
 
 {% block content %}
 <div class="row">
@@ -156,3 +161,7 @@
     </div>
 </div>
 {% endblock %}
+"""
+
+with open('/mnt/c/Users/wei/Desktop/inventory/templates/inventory.html', 'w') as f:
+    f.write(replacement)

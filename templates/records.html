@@ -11,12 +11,12 @@
     <div class="col-md-4 mb-4">
         <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
             <div class="card-body">
-                <h5 class="fw-bold mb-3">Add Entry</h5>
+                <h5 id="addEntryHeading" class="fw-bold mb-3">Add Entry</h5>
                 <form method="POST">
                     <input type="hidden" name="add_entry" value="1">
                     <div class="mb-3">
                         <label class="small fw-bold">Client</label>
-                        <select name="client_id" class="form-select" required>
+                        <select name="client_id" id="clientSelect" class="form-select" required>
                             {% for c in clients %}
                                 <option value="{{ c.id }}" 
                                     {% if c.id == last_client_id %} selected {% endif %}>
@@ -51,20 +51,21 @@
         <h5 class="fw-bold mb-3">Current Session Items</h5>
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
-                <table class="table align-middle mb-0" style="table-layout: fixed; width: 100%;">
+                <table class="table align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 40%;">Client / Item</th>
-                            <th class="text-center" style="width: 15%;">Qty</th>
-                            <th class="text-center" style="width: 30%;">Status</th>
-                            <th class="text-end" style="width: 15%;">Action</th>
+                            <th class="text-nowrap" style="width: 35%;">Client / Item</th>
+                            <th class="text-center text-nowrap" style="width: 10%;">Qty</th>
+                            <th class="text-center text-nowrap" style="width: 35%;">Status</th>
+                            <th class="text-end text-nowrap" style="width: 20%;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for client_name, items in grouped_entries.items() %}
-                        <tr class="table-secondary">
-                            <td colspan="4" class="fw-bold py-2">
+                        <tr class="table-secondary" style="cursor: pointer;" onclick="autoSelectClient('{{ items[0].client_id }}')" title="Click to auto-select this client">
+                            <td colspan="4" class="fw-bold py-2 text-primary">
                                 <i class="bi bi-person-circle me-2"></i> {{ client_name }}
+                                <small class="float-end fw-normal pt-1"><i class="bi bi-reply-fill"></i> Add</small>
                             </td>
                         </tr>
                         
@@ -73,14 +74,31 @@
                             <td class="ps-4 text-truncate">
                                 <i class="bi bi-arrow-return-right me-2 text-muted"></i>{{ entry.item_name }}
                             </td>
-                            <td class="text-center fw-bold">
-                                {{ entry.qty }}
+                            <td class="text-center fw-bold align-middle">
+                                {% if entry.qty_returned > 0 and entry.qty_returned < entry.qty %}
+                                    {{ entry.qty - entry.qty_returned }}<br>
+                                    <small class="text-muted fw-normal text-nowrap">({{ entry.qty_returned }} returned)</small>
+                                {% else %}
+                                    {{ entry.qty }}
+                                {% endif %}
                             </td>
                             <td class="text-center">
-                                <a href="{{ url_for('toggle_session_return', entry_id=entry.id) }}" 
-                                   class="btn btn-sm w-75 {{ 'btn-success' if entry.is_returned else 'btn-outline-secondary' }}">
-                                    {{ 'Returned' if entry.is_returned else 'Out' }}
-                                </a>
+                                <form action="{{ url_for('toggle_session_return', entry_id=entry.id) }}" method="POST" id="form_draft_{{ entry.id }}" class="m-0 p-0 d-inline">
+                                    <input type="hidden" name="qty" id="qty_draft_{{ entry.id }}" value="1">
+                                    <input type="hidden" name="action" id="action_draft_{{ entry.id }}" value="return">
+                                    
+                                    {% if entry.is_returned %}
+                                        <button type="button" class="btn btn-sm w-75 btn-success" 
+                                                onclick="handleReturn('draft_{{ entry.id }}', {{ entry.qty_returned }}, 'undo')">
+                                            Returned
+                                        </button>
+                                    {% else %}
+                                        <button type="button" class="btn btn-sm w-75 btn-outline-secondary"
+                                                onclick="handleReturn('draft_{{ entry.id }}', {{ entry.qty - entry.qty_returned }}, 'return')">
+                                            Out
+                                        </button>
+                                    {% endif %}
+                                </form>
                             </td>
                             <td class="text-end">
                                 <a href="{{ url_for('remove_entry', entry_id=entry.id) }}" class="btn btn-link text-danger p-0">
@@ -103,7 +121,7 @@
         {% if grouped_entries %}
         <div class="card shadow-sm border-0 mt-4 bg-light border-start border-4 border-success">
             <div class="card-body p-4">
-                <form action="{{ url_for('save_day') }}" method="POST">
+                <form action="{{ url_for('save_day') }}" method="POST" onsubmit="return confirm('Are you sure you want to finish and save all current records for the day?');">
                     <div class="row align-items-end">
                         <div class="col-md-5 mb-3 mb-md-0">
                             <label class="form-label small fw-bold text-muted text-uppercase">
@@ -126,4 +144,38 @@
         <div class="mb-5"></div> {% endif %}
     </div>
 </div>
+
+<script>
+function handleReturn(formId, maxQty, actionType) {
+    let qty = 1;
+    if (maxQty > 1) {
+        let actionText = actionType === 'undo' ? 'undo return for' : 'return';
+        let input = prompt(`How many items do you want to ${actionText}? (Max: ${maxQty})`, maxQty);
+        if (input === null) return; // cancelled
+        qty = parseInt(input);
+        if (isNaN(qty) || qty <= 0 || qty > maxQty) {
+            alert("Invalid quantity entered.");
+            return;
+        }
+    } else {
+        qty = 1;
+    }
+    
+    document.getElementById('qty_' + formId).value = qty;
+    document.getElementById('action_' + formId).value = actionType;
+    document.getElementById('form_' + formId).submit();
+}
+
+function autoSelectClient(clientId) {
+    let select = document.getElementById('clientSelect');
+    if (select) {
+        select.value = clientId;
+        // Scroll to the "Add Entry" section
+        document.getElementById('addEntryHeading').scrollIntoView({behavior: 'smooth', block: 'start'});
+        // Optionally flash the select box to show it changed
+        select.style.boxShadow = "0 0 10px #0d6efd";
+        setTimeout(() => select.style.boxShadow = "", 800);
+    }
+}
+</script>
 {% endblock %}

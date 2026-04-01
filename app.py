@@ -1,6 +1,6 @@
 import os, uuid
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-from models import db, Item, Place, Client, DayRecord, User
+from models import db, Item, Place, Client, DayRecord, User, DraftRecord
 from datetime import datetime
 from sqlalchemy import func, desc, case
 
@@ -27,6 +27,16 @@ def inject_user():
         user = User.query.get(session['user_id'])
         return dict(current_user=user)
     return dict(current_user=None)
+
+
+@app.before_request
+def check_user_exists():
+    if 'user_id' in session:
+        user = db.session.get(User, session['user_id'])
+        if not user:
+            session.clear()
+            flash("Session expired or user deleted. Please log in again.", "warning")
+            return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -69,17 +79,36 @@ def inventory():
     if 'user_id' not in session: return redirect(url_for('login'))
     user = db.session.get(User, session['user_id'])
     
+    # Check if they selected a different user to view
+    if 'view_user_id' in request.args:
+        session['view_user_id'] = int(request.args.get('view_user_id'))
+        return redirect(url_for('inventory'))
+        
+    view_id = user.id
+    if not getattr(user, 'has_own_inventory', True):
+        # If they don't have their own, use their selected view or default to the first boss/user with inventory
+        view_id = session.get('view_user_id')
+        if not view_id:
+            first_user = User.query.filter_by(has_own_inventory=True).first()
+            if first_user:
+                view_id = first_user.id
+                session['view_user_id'] = view_id
+    
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
     search_query = request.args.get('search', '')
 
     if request.method == 'POST':
+        # Block POST if they don't have their own inventory
+        if not getattr(user, 'has_own_inventory', True):
+            flash("You do not have permission to modify inventory.", "danger")
+            return redirect(url_for('inventory'))
+            
         # --- BULK SAVE ---
         if 'bulk_save' in request.form:
             item_ids = request.form.getlist('item_ids[]')
             quantities = request.form.getlist('quantities[]')
             for i_id, qty in zip(item_ids, quantities):
-                # STRICT: Users (and Boss) can ONLY edit items they personally own
                 item = Item.query.filter_by(id=i_id, user_id=user.id).first()
                 if item and item.is_active:
                     item.quantity = int(qty)
@@ -89,7 +118,6 @@ def inventory():
         else:
             name = request.form.get('name').strip()
             qty = int(request.form.get('qty'))
-            # Find item tied specifically to the logged-in user
             item = Item.query.filter_by(user_id=user.id).filter(Item.name.ilike(name)).first()
             if item: 
                 item.quantity += qty
@@ -102,11 +130,9 @@ def inventory():
         return redirect(url_for('inventory', search=search_query, per_page=per_page, page=page))
 
     # --- FETCH LOGIC ---
-    # Subquery for items currently lent out (to ensure archived items with debt still show)
-    lent_subquery = db.session.query(DayRecord.item_id).filter(DayRecord.is_returned == False, DayRecord.is_sold == False).distinct().subquery()
+    lent_subquery = db.session.query(DayRecord.item_id).filter(DayRecord.quantity_returned < DayRecord.quantity_out, DayRecord.is_sold == False).distinct().subquery()
 
-    # STRICT PRIVACY: Every user (Boss included) only sees THEIR own inventory entries
-    items_query = Item.query.filter_by(user_id=user.id).filter(
+    items_query = Item.query.filter_by(user_id=view_id).filter(
         db.or_(Item.is_active == True, Item.id.in_(lent_subquery))
     )
 
@@ -116,29 +142,34 @@ def inventory():
     pagination = items_query.order_by(Item.is_active.desc(), Item.name).paginate(page=page, per_page=per_page)
     
     for item in pagination.items:
-        # Check lent out count specifically for this item
         item.lent_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
-            DayRecord.item_id == item.id, DayRecord.is_returned == False, DayRecord.is_sold == False
+            DayRecord.item_id == item.id, DayRecord.quantity_returned < DayRecord.quantity_out, DayRecord.is_sold == False
         ).scalar() or 0
+
+    # Fetch users with inventory for the dropdown
+    users_with_inventory = []
+    if not getattr(user, 'has_own_inventory', True):
+        users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
 
     return render_template('inventory.html', 
                            pagination=pagination, 
                            items=pagination.items, 
                            search_query=search_query, 
-                           per_page=per_page)
+                           per_page=per_page,
+                           users_with_inventory=users_with_inventory,
+                           view_id=view_id)
 
 @app.route('/record', methods=['GET', 'POST'])
 def record():
     if 'user_id' not in session: return redirect(url_for('login'))
+    user = db.session.get(User, session['user_id'])
     place_id = session.get('current_place_id')
     
     # 1. Location Selection (Ordered A-Z)
     if not place_id:
         if request.method == 'POST':
             session['current_place_id'] = request.form['place_id']
-            session['temp_entries'] = []
             return redirect(url_for('record'))
-        # Added .order_by(Place.name)
         return render_template('select_place.html', 
                                places = Place.query.filter_by(is_active=True).order_by(Place.name).all())
 
@@ -149,54 +180,63 @@ def record():
         qty = int(request.form['qty'])
         
         item = Item.query.get(item_id)
-        temp_list = session.get('temp_entries', [])
         
-        # --- NEW: STOCK GUARD START ---
-        # 1. Calculate how many are ALREADY in the basket for this specific item
-        # (We only count entries where is_returned is False, because those take stock away)
-        already_in_basket = sum(e['qty'] for e in temp_list if e['item_id'] == item_id and not e.get('is_returned'))
+        # Calculate how many are ALREADY in the shared basket across ALL places for this item
+        already_in_basket = db.session.query(func.sum(DraftRecord.quantity_out - DraftRecord.quantity_returned)).filter(DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).scalar() or 0
         
-        # 2. Check if the New Qty + Current Basket exceeds what you actually own
         if (already_in_basket + qty) > item.quantity:
             remaining = item.quantity - already_in_basket
             flash(f"Not enough stock! You only have {remaining} left available to add.", "danger")
             return redirect(url_for('record'))
-        # --- STOCK GUARD END ---
         
-        # STICKY CLIENT: Save the selection
         session['last_client_id'] = client_id
         
-        # --- MERGE CHECK START ---
-        found = False
-        for entry in temp_list:
-            if entry['client_id'] == client_id and entry['item_id'] == item_id:
-                entry['qty'] += qty
-                found = True
-                break
+        draft = DraftRecord.query.filter(DraftRecord.place_id==place_id, DraftRecord.client_id==client_id, DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).first()
         
-        if not found:
-            client = Client.query.get(client_id)
-            temp_list.append({
-                'id': str(uuid.uuid4()), 
-                'client_id': client.id, 
-                'client_name': client.name, 
-                'item_id': item.id, 
-                'item_name': item.name, 
-                'qty': qty, 
-                'is_returned': False
-            })
-        
-        session['temp_entries'] = temp_list
-        session.modified = True
+        if draft:
+            draft.quantity_out += qty
+        else:
+            draft = DraftRecord(
+                item_id=item.id,
+                place_id=place_id,
+                client_id=client_id,
+                user_id=session['user_id'],
+                quantity_out=qty,
+                is_returned=False
+            )
+            db.session.add(draft)
+            
+        db.session.commit()
         return redirect(url_for('record'))
 
+    # Determine whose items to show
+    view_id = user.id
+    if not getattr(user, 'has_own_inventory', True):
+        view_id = session.get('view_user_id')
+        if not view_id:
+            first_user = User.query.filter_by(has_own_inventory=True).first()
+            if first_user:
+                view_id = first_user.id
+                session['view_user_id'] = view_id
+
     # 3. Live Stock Calculation (Ordered A-Z)
-    db_items = Item.query.filter_by(user_id=session['user_id']).order_by(Item.name).all()
-    temp_entries = session.get('temp_entries', [])
+    db_items = Item.query.filter_by(user_id=view_id, is_active=True).order_by(Item.name).all()
+    
+    drafts = DraftRecord.query.filter_by(place_id=place_id).all()
+    temp_entries = [{
+        'id': str(d.id), 
+        'client_id': d.client_id, 
+        'client_name': d.client.name, 
+        'item_id': d.item_id, 
+        'item_name': d.item.name, 
+        'qty': d.quantity_out, 
+        'qty_returned': d.quantity_returned,
+        'is_returned': d.quantity_returned >= d.quantity_out
+    } for d in drafts]
     
     display_items = []
     for item in db_items:
-        in_basket = sum(e['qty'] for e in temp_entries if e['item_id'] == item.id and not e['is_returned'])
+        in_basket = sum(e['qty'] - e['qty_returned'] for e in temp_entries if e['item_id'] == item.id)
         live_qty = max(0, item.quantity - in_basket)
         display_items.append({'id': item.id, 'name': item.name, 'live_qty': live_qty})
 
@@ -218,55 +258,43 @@ def record():
                            clients=clients, 
                            grouped_entries=grouped_entries,
                            last_client_id=session.get('last_client_id'),
-                           today_date=today_str) # Pass this to the template
+                           today_date=today_str)
 
 @app.route('/save_day', methods=['POST'])
 def save_day():
     if 'user_id' not in session: return redirect(url_for('login'))
     
-    temp_entries = session.get('temp_entries', [])
     place_id = session.get('current_place_id')
+    drafts = DraftRecord.query.filter_by(place_id=place_id).all()
     
-    if not temp_entries or not place_id:
+    if not drafts or not place_id:
         flash("No records to save!", "warning")
         return redirect(url_for('record'))
 
-    # --- MANUAL DATE PROCESSING ---
     date_str = request.form.get('manual_date')
     try:
-        # Convert "YYYY-MM-DD" string to datetime object
         chosen_date = datetime.strptime(date_str, '%Y-%m-%d')
-        # Add current hour/minute so the time is accurate
         now = datetime.now()
         final_timestamp = chosen_date.replace(hour=now.hour, minute=now.minute, second=now.second)
     except Exception:
-        # Fallback to right now if something goes wrong
         final_timestamp = datetime.now()
 
     try:
-        for entry in temp_entries:
-            # 1. Create the permanent record with the final_timestamp
+        for draft in drafts:
             new_record = DayRecord(
-                item_id=entry['item_id'],
+                item_id=draft.item_id,
                 place_id=place_id,
-                client_id=entry['client_id'],
+                client_id=draft.client_id,
                 user_id=session['user_id'],
-                quantity_out=entry['qty'],
-                is_returned=entry['is_returned'],
-                timestamp=final_timestamp  # <--- Use the processed date here
+                quantity_out=draft.quantity_out,
+                quantity_returned=draft.quantity_returned,
+                is_returned=draft.quantity_returned >= draft.quantity_out,
+                timestamp=final_timestamp
             )
             db.session.add(new_record)
-            
-            # 2. Subtract from Inventory ONLY if checking out (not returning)
-            if not entry['is_returned']:
-                item = Item.query.get(entry['item_id'])
-                if item:
-                    item.quantity -= entry['qty']
-
+            db.session.delete(draft)
+                
         db.session.commit()
-        
-        # 3. Clear the temporary session data
-        session.pop('temp_entries', None)
         session.pop('current_place_id', None)
         
         flash(f"Session saved for {final_timestamp.strftime('%d %b %Y')}!", "success")
@@ -312,13 +340,12 @@ def history():
         func.date(DayRecord.timestamp).label('day'),
         DayRecord.place_id,
         Place.name.label('place_name'),
-        func.sum(case((db.and_(DayRecord.is_returned == False, DayRecord.is_sold == False), 1), else_=0)).label('unreturned_count')
+        func.sum(case((db.and_(DayRecord.quantity_returned < DayRecord.quantity_out, DayRecord.is_sold == False), 1), else_=0)).label('unreturned_count')
     ).join(Place)
 
-    # --- BOSS SUPER-VISION ---
-    # Boss sees everyone's history; Staff only sees their own.
-    if user.role != 'boss':
-        query = query.filter(DayRecord.user_id == user.id)
+    # Shared Visibility: Everyone can see all history records
+    # Removed the user.role != 'boss' filter so all staff can see accumulated records
+    # for the same racecourse on the same day.
 
     if f_date:
         query = query.filter(func.date(DayRecord.timestamp) == f_date)
@@ -357,7 +384,8 @@ def settings():
                     username=request.form['new_username'], 
                     password=request.form['new_password'], 
                     role='staff',
-                    display_name=request.form.get('new_display_name', '')
+                    display_name=request.form.get('new_display_name', ''),
+                    has_own_inventory='has_own_inventory' in request.form
                 )
                 db.session.add(new_user)
                 flash(f"Staff {new_user.username} created successfully.", "success")
@@ -421,21 +449,34 @@ def settings():
 
 @app.route('/reset_session')
 def reset_session():
-    # Clear the temporary recording data from the browser session
     session.pop('current_place_id', None)
-    session.pop('temp_entries', None)
     flash("Session reset. Please select a new location.", "info")
     return redirect(url_for('record'))
 
-# Helper routes for toggles/deletes
-@app.route('/toggle_session_return/<string:entry_id>')
+@app.route('/toggle_session_return/<string:entry_id>', methods=['GET', 'POST'])
 def toggle_session_return(entry_id):
-    temp = session.get('temp_entries', [])
-    for e in temp:
-        if e['id'] == entry_id:
-            e['is_returned'] = not e['is_returned']
-    session['temp_entries'] = temp
-    session.modified = True
+    draft = DraftRecord.query.get(int(entry_id))
+    if draft:
+        try:
+            qty = int(request.form.get('qty', draft.quantity_out - draft.quantity_returned)) if request.method == 'POST' else (draft.quantity_out - draft.quantity_returned)
+        except ValueError:
+            qty = draft.quantity_out - draft.quantity_returned
+            
+        action = request.form.get('action', 'return')
+        
+        if action == 'return':
+            if qty <= 0 or (draft.quantity_returned + qty) > draft.quantity_out:
+                flash("Invalid quantity.", "danger")
+                return redirect(url_for('record'))
+            draft.quantity_returned += qty
+        elif action == 'undo':
+            if qty <= 0 or (draft.quantity_returned - qty) < 0:
+                flash("Invalid undo quantity.", "danger")
+                return redirect(url_for('record'))
+            draft.quantity_returned -= qty
+            
+        draft.is_returned = draft.quantity_returned >= draft.quantity_out
+        db.session.commit()
     return redirect(url_for('record'))
 
 @app.route('/delete_item/<int:id>')
@@ -461,21 +502,12 @@ def delete_item(id):
 
 @app.route('/remove_entry/<string:entry_id>')
 def remove_entry(entry_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    # Get the current temporary list from the session
-    temp_list = session.get('temp_entries', [])
-    
-    # Filter the list to keep everything EXCEPT the item we clicked
-    # We use a list comprehension for a clean, Pythonic removal
-    updated_list = [e for e in temp_list if e['id'] != entry_id]
-    
-    # Save the updated list back to the session
-    session['temp_entries'] = updated_list
-    session.modified = True  # Tell Flask the session data changed
-    
-    flash("Item removed from your current list.", "info")
+    if 'user_id' not in session: return redirect(url_for('login'))
+    draft = DraftRecord.query.get(int(entry_id))
+    if draft:
+        db.session.delete(draft)
+        db.session.commit()
+        flash("Item removed from your current list.", "info")
     return redirect(url_for('record'))
 
 @app.route('/history/<ts>/<int:place_id>')
@@ -491,9 +523,8 @@ def session_details(ts, place_id):
         DayRecord.place_id == place_id
     ]
     
-    # --- BOSS LOGIC ---
-    if user.role != 'boss':
-        filters.append(DayRecord.user_id == user.id)
+    # Shared Visibility: Everyone can see all details
+    # Removed the user.role != 'boss' filter.
     
     records = DayRecord.query.filter(*filters).all()
     
@@ -549,28 +580,40 @@ def bulk_update_inventory():
     flash("Inventory updated successfully!", "success")
     return redirect(url_for('inventory'))
 
-@app.route('/toggle_return/<int:record_id>')
+@app.route('/toggle_return/<int:record_id>', methods=['GET', 'POST'])
 def toggle_return(record_id):
     if 'user_id' not in session: return redirect(url_for('login'))
     
     record = DayRecord.query.get_or_404(record_id)
     item = Item.query.get(record.item_id)
     
-    # Logic: If we are CHANGING it to 'Returned', add stock back.
-    # If we are CHANGING it back to 'Out', subtract stock again.
-    if record.is_returned: # It was returned, now it's going back out
-        item.quantity -= record.quantity_out
-    else: # It was out, now it's coming back in
-        item.quantity += record.quantity_out
+    try:
+        qty = int(request.form.get('qty', record.quantity_out - record.quantity_returned)) if request.method == 'POST' else (record.quantity_out - record.quantity_returned)
+    except ValueError:
+        qty = record.quantity_out - record.quantity_returned
         
-    record.is_returned = not record.is_returned
+    action = request.form.get('action', 'return')
+    
+    if action == 'return':
+        if qty <= 0 or (record.quantity_returned + qty) > record.quantity_out:
+            flash("Invalid quantity specified.", "danger")
+            return redirect(request.referrer)
+        record.quantity_returned += qty
+        item.quantity += qty
+    elif action == 'undo':
+        if qty <= 0 or (record.quantity_returned - qty) < 0:
+            flash("Invalid undo quantity.", "danger")
+            return redirect(request.referrer)
+        record.quantity_returned -= qty
+        item.quantity -= qty
+        
+    record.is_returned = record.quantity_returned >= record.quantity_out
     db.session.commit()
 
     if item.quantity == 0:
-        # Re-check lent out status
-        still_out = db.session.query(func.sum(DayRecord.quantity_out)).filter(
+        still_out = db.session.query(func.sum(DayRecord.quantity_out - DayRecord.quantity_returned)).filter(
             DayRecord.item_id == item.id,
-            DayRecord.is_returned == False,
+            DayRecord.quantity_returned < DayRecord.quantity_out,
             DayRecord.is_sold == False
         ).scalar() or 0
         
@@ -585,6 +628,11 @@ def toggle_return(record_id):
 def delete_session(ts, place_id):
     if 'user_id' not in session: 
         return redirect(url_for('login'))
+        
+    user = db.session.get(User, session['user_id'])
+    if user.role != 'boss':
+        flash("Permission Denied: Only the boss can delete history records.", "danger")
+        return redirect(url_for('history'))
     
     # 1. Filter all records that match the date string and the place ID
     records = DayRecord.query.filter(
