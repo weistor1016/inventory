@@ -1,14 +1,19 @@
-import os, uuid
+import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from models import db, Item, Place, Client, DayRecord, User, DraftRecord
 from datetime import datetime
 from sqlalchemy import func, desc, case
+from dotenv import load_dotenv
+
+
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "trackit_secret_key_2026"
+app.secret_key = os.environ.get("SECRET_KEY", "traxxit_secret_key_2026")
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'inventory.db')
+os.environ['PGCLIENTENCODING'] = 'utf8'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
@@ -16,8 +21,7 @@ with app.app_context():
     db.create_all()
     if not User.query.first():
         db.session.add_all([
-            User(username='bossman', password='password123', role='boss'),
-            User(username='staff_john', password='password123', role='staff')
+            User(username='bossman', password='password123', role='boss', display_name='boss')
         ])
         db.session.commit()
 
@@ -352,7 +356,7 @@ def history():
     if f_place:
         query = query.filter(Place.name.ilike(f"%{f_place}%"))
 
-    pagination = query.group_by(func.date(DayRecord.timestamp), DayRecord.place_id)\
+    pagination = query.group_by(func.date(DayRecord.timestamp), DayRecord.place_id, Place.name)\
                       .order_by(desc('day'))\
                       .paginate(page=page, per_page=per_page)
 
@@ -722,7 +726,3 @@ def delete_staff(staff_id):
         flash("Cannot delete staff with existing history records. Deactivate them instead.", "danger")
         
     return redirect(url_for('settings'))
-
-if __name__ == '__main__':
-
-    app.run(host='0.0.0.0', port=5000, debug=True)
