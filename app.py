@@ -434,11 +434,11 @@ def settings():
     # Also added .order_by(name) for A-Z sorting
     p_query = Place.query.filter_by(is_active=True)
     if search_p: p_query = p_query.filter(Place.name.ilike(f"%{search_p}%"))
-    p_pag = p_query.order_by(Place.name).paginate(page=page_p, per_page=per_page)
+    p_pag = p_query.order_by(Place.name).paginate(page=page_p, per_page=per_page, count=False)
     
     c_query = Client.query.filter_by(is_active=True)
     if search_c: c_query = c_query.filter(Client.name.ilike(f"%{search_c}%"))
-    c_pag = c_query.order_by(Client.name).paginate(page=page_c, per_page=per_page)
+    c_pag = c_query.order_by(Client.name).paginate(page=page_c, per_page=per_page, count=False)
     
     staff = User.query.filter_by(role='staff').all() if user.role == 'boss' else []
     
