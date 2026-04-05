@@ -97,7 +97,7 @@
                                 {% if not r.is_returned %}
                                 <a href="{{ url_for('toggle_sold', record_id=r.id) }}" 
                                    class="btn btn-sm {{ 'btn-dark text-white' if r.is_sold else 'btn-outline-dark' }}" 
-                                   onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold? Inventory will NOT be replenished.' }}')"
+                                   onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold?' }}')"
                                    title="{{ 'Unmark as Sold' if r.is_sold else 'Mark as Sold' }}">
                                     <i class="bi bi-cart-plus"></i> {{ 'Undo Sold' if r.is_sold else 'Sell' }}
                                 </a>

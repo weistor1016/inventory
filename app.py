@@ -179,37 +179,38 @@ def record():
 
     # 2. Add/Merge Entry Logic
     if request.method == 'POST' and 'add_entry' in request.form:
-        item_id = int(request.form['item_id'])
+        item_ids = request.form.getlist('item_id')
         client_id = int(request.form['client_id'])
         qty = int(request.form['qty'])
-        
-        item = Item.query.get(item_id)
-        
-        # Calculate how many are ALREADY in the shared basket across ALL places for this item
-        already_in_basket = db.session.query(func.sum(DraftRecord.quantity_out - DraftRecord.quantity_returned)).filter(DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).scalar() or 0
-        
-        if (already_in_basket + qty) > item.quantity:
-            remaining = item.quantity - already_in_basket
-            flash(f"Not enough stock! You only have {remaining} left available to add.", "danger")
-            return redirect(url_for('record'))
-        
         session['last_client_id'] = client_id
         
-        draft = DraftRecord.query.filter(DraftRecord.place_id==place_id, DraftRecord.client_id==client_id, DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).first()
-        
-        if draft:
-            draft.quantity_out += qty
-        else:
-            draft = DraftRecord(
-                item_id=item.id,
-                place_id=place_id,
-                client_id=client_id,
-                user_id=session['user_id'],
-                quantity_out=qty,
-                is_returned=False
-            )
-            db.session.add(draft)
+        for i_id in item_ids:
+            item_id = int(i_id)
+            item = Item.query.get(item_id)
             
+            # Calculate how many are ALREADY in the shared basket across ALL places for this item
+            already_in_basket = db.session.query(func.sum(DraftRecord.quantity_out - DraftRecord.quantity_returned)).filter(DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).scalar() or 0
+            
+            if (already_in_basket + qty) > item.quantity:
+                remaining = item.quantity - already_in_basket
+                flash(f"Not enough stock for {item.name}! You only have {remaining} left available to add.", "danger")
+                continue
+            
+            draft = DraftRecord.query.filter(DraftRecord.place_id==place_id, DraftRecord.client_id==client_id, DraftRecord.item_id==item_id, DraftRecord.quantity_returned < DraftRecord.quantity_out).first()
+            
+            if draft:
+                draft.quantity_out += qty
+            else:
+                draft = DraftRecord(
+                    item_id=item.id,
+                    place_id=place_id,
+                    client_id=client_id,
+                    user_id=session['user_id'],
+                    quantity_out=qty,
+                    is_returned=False
+                )
+                db.session.add(draft)
+                
         db.session.commit()
         return redirect(url_for('record'))
 
@@ -263,6 +264,43 @@ def record():
                            grouped_entries=grouped_entries,
                            last_client_id=session.get('last_client_id'),
                            today_date=today_str)
+
+
+@app.route('/update_draft_qty/<int:draft_id>', methods=['POST'])
+def update_draft_qty(draft_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    draft = DraftRecord.query.get_or_404(draft_id)
+    
+    try:
+        new_qty = int(request.form.get('new_qty'))
+        if new_qty < draft.quantity_returned:
+            flash("Cannot set quantity below what has already been returned.", "danger")
+            return redirect(url_for('record'))
+            
+        item = Item.query.get(draft.item_id)
+        
+        # Calculate how many are ALREADY in the shared basket excluding THIS draft
+        already_in_basket = db.session.query(func.sum(DraftRecord.quantity_out - DraftRecord.quantity_returned)).filter(
+            DraftRecord.item_id==draft.item_id, 
+            DraftRecord.quantity_returned < DraftRecord.quantity_out,
+            DraftRecord.id != draft_id
+        ).scalar() or 0
+        
+        # Check against available stock
+        net_change = new_qty - draft.quantity_out
+        if net_change > 0:
+            if (already_in_basket + (draft.quantity_out - draft.quantity_returned) + net_change) > item.quantity:
+                remaining_stock_can_add = item.quantity - already_in_basket - (draft.quantity_out - draft.quantity_returned)
+                flash(f"Not enough stock! You only have {remaining_stock_can_add} more available.", "danger")
+                return redirect(url_for('record'))
+                
+        draft.quantity_out = new_qty
+        draft.is_returned = draft.quantity_returned >= draft.quantity_out
+        db.session.commit()
+    except ValueError:
+        flash("Invalid quantity.", "danger")
+        
+    return redirect(url_for('record'))
 
 @app.route('/save_day', methods=['POST'])
 def save_day():
@@ -456,6 +494,31 @@ def reset_session():
     session.pop('current_place_id', None)
     flash("Session reset. Please select a new location.", "info")
     return redirect(url_for('record'))
+
+
+@app.route('/bulk_toggle_session', methods=['POST'])
+def bulk_toggle_session():
+    if 'user_id' not in session: return {"error": "Unauthorized"}, 401
+    data = request.json
+    toggles = data.get('toggles', [])
+    
+    for t in toggles:
+        draft_id = t.get('id')
+        qty = int(t.get('qty', 0))
+        action = t.get('action')
+        
+        draft = DraftRecord.query.get(draft_id)
+        if draft:
+            if action == 'return':
+                if 0 < qty <= (draft.quantity_out - draft.quantity_returned):
+                    draft.quantity_returned += qty
+            elif action == 'undo':
+                if 0 < qty <= draft.quantity_returned:
+                    draft.quantity_returned -= qty
+            draft.is_returned = draft.quantity_returned >= draft.quantity_out
+            
+    db.session.commit()
+    return {"success": True}
 
 @app.route('/toggle_session_return/<string:entry_id>', methods=['GET', 'POST'])
 def toggle_session_return(entry_id):

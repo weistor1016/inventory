@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3>📍 Location: <span class="text-primary">{{ place.name }}</span></h3>
     <a href="{{ url_for('reset_session') }}" class="btn btn-outline-warning btn-sm" onclick="return confirm('Clear current session?')">
@@ -27,7 +28,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="small fw-bold">Item</label>
-                        <select name="item_id" class="form-select" required>
+                        <select name="item_id" id="itemSelect" class="form-select" multiple required placeholder="Search and select items...">
                             {% for i in items %}
                                 {% if i.live_qty > 0 %}
                                     <option value="{{ i.id }}">{{ i.name }} (Available: {{ i.live_qty }})</option>
@@ -39,7 +40,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="small fw-bold">Quantity</label>
-                        <input type="number" name="qty" class="form-control" min="1" required>
+                        <input type="number" name="qty" class="form-control" min="1" value="1" required>
                     </div>
                     <button type="submit" class="btn btn-success w-100 shadow-sm">Add to List</button>
                 </form>
@@ -48,7 +49,12 @@
     </div>
 
     <div class="col-md-8">
-        <h5 class="fw-bold mb-3">Current Session Items</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">Current Session Items</h5>
+            <button id="saveTogglesBtn" class="btn btn-warning btn-sm shadow-sm fw-bold" style="display:none;" onclick="saveToggles()">
+                <i class="bi bi-save me-1"></i>Save Toggles
+            </button>
+        </div>
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
@@ -75,30 +81,29 @@
                                 <i class="bi bi-arrow-return-right me-2 text-muted"></i>{{ entry.item_name }}
                             </td>
                             <td class="text-center fw-bold align-middle">
+                                <form action="{{ url_for('update_draft_qty', draft_id=entry.id) }}" method="POST" id="form_edit_qty_{{ entry.id }}" class="d-none">
+                                    <input type="hidden" name="new_qty" id="input_edit_qty_{{ entry.id }}">
+                                </form>
                                 {% if entry.qty_returned > 0 and entry.qty_returned < entry.qty %}
-                                    {{ entry.qty - entry.qty_returned }}<br>
+                                    <span style="cursor: pointer;" onclick="editDraftQty('{{ entry.id }}', {{ entry.qty }}, {{ entry.qty_returned }}, '{{ entry.item_name | replace("'", "\\'") }}')">{{ entry.qty - entry.qty_returned }}</span>
+                                    <br>
                                     <small class="text-muted fw-normal text-nowrap">({{ entry.qty_returned }} returned)</small>
                                 {% else %}
-                                    {{ entry.qty }}
+                                    <span style="cursor: pointer;" onclick="editDraftQty('{{ entry.id }}', {{ entry.qty }}, {{ entry.qty_returned }}, '{{ entry.item_name | replace("'", "\\'") }}')">{{ entry.qty }}</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <form action="{{ url_for('toggle_session_return', entry_id=entry.id) }}" method="POST" id="form_draft_{{ entry.id }}" class="m-0 p-0 d-inline">
-                                    <input type="hidden" name="qty" id="qty_draft_{{ entry.id }}" value="1">
-                                    <input type="hidden" name="action" id="action_draft_{{ entry.id }}" value="return">
-                                    
-                                    {% if entry.is_returned %}
-                                        <button type="button" class="btn btn-sm w-75 btn-success" 
-                                                onclick="handleReturn('draft_{{ entry.id }}', {{ entry.qty_returned }}, 'undo')">
-                                            Returned
-                                        </button>
-                                    {% else %}
-                                        <button type="button" class="btn btn-sm w-75 btn-outline-secondary"
-                                                onclick="handleReturn('draft_{{ entry.id }}', {{ entry.qty - entry.qty_returned }}, 'return')">
-                                            Out
-                                        </button>
-                                    {% endif %}
-                                </form>
+                                {% if entry.is_returned %}
+                                    <button type="button" class="btn btn-sm w-75 btn-success" 
+                                            onclick="handleReturn({{ entry.id }}, {{ entry.qty_returned }}, 'undo', this)">
+                                        Returned
+                                    </button>
+                                {% else %}
+                                    <button type="button" class="btn btn-sm w-75 btn-outline-secondary"
+                                            onclick="handleReturn({{ entry.id }}, {{ entry.qty - entry.qty_returned }}, 'return', this)">
+                                        Out
+                                    </button>
+                                {% endif %}
                             </td>
                             <td class="text-end">
                                 <a href="{{ url_for('remove_entry', entry_id=entry.id) }}" class="btn btn-link text-danger p-0">
@@ -146,7 +151,9 @@
 </div>
 
 <script>
-function handleReturn(formId, maxQty, actionType) {
+let toggleQueue = [];
+
+function handleReturn(draftId, maxQty, actionType, btnElement) {
     let qty = 1;
     if (maxQty > 1) {
         let actionText = actionType === 'undo' ? 'undo return for' : 'return';
@@ -157,13 +164,60 @@ function handleReturn(formId, maxQty, actionType) {
             alert("Invalid quantity entered.");
             return;
         }
-    } else {
-        qty = 1;
     }
     
-    document.getElementById('qty_' + formId).value = qty;
-    document.getElementById('action_' + formId).value = actionType;
-    document.getElementById('form_' + formId).submit();
+    // Add to our save queue
+    toggleQueue.push({ id: draftId, qty: qty, action: actionType });
+    
+    // Update UI to show the target state immediately
+    if (actionType === 'return') {
+        btnElement.classList.remove('btn-outline-secondary');
+        btnElement.classList.add('btn-success');
+        btnElement.innerText = "Returned";
+    } else {
+        btnElement.classList.remove('btn-success');
+        btnElement.classList.add('btn-outline-secondary');
+        btnElement.innerText = "Out";
+    }
+    
+    // Update the button so if they click it again, it reverses their action!
+    let nextAction = actionType === 'return' ? 'undo' : 'return';
+    btnElement.setAttribute('onclick', `handleReturn(${draftId}, ${qty}, '${nextAction}', this)`);
+    
+    // Add a slight opacity so you know it's a pending change
+    btnElement.style.opacity = "0.8";
+    btnElement.disabled = false; // Allow clicking again to fix mistakes
+    
+    // Show the master save button
+    document.getElementById('saveTogglesBtn').style.display = 'inline-block';
+}
+
+async function saveToggles() {
+    if (toggleQueue.length === 0) return;
+    
+    let btn = document.getElementById('saveTogglesBtn');
+    btn.innerText = "Saving...";
+    btn.disabled = true;
+    
+    try {
+        let response = await fetch('/bulk_toggle_session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ toggles: toggleQueue })
+        });
+        
+        if (response.ok) {
+            window.location.reload(); // Refresh once everything is saved
+        } else {
+            alert("Failed to save toggles.");
+            btn.innerText = "Save Toggles";
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert("Network error occurred.");
+        btn.innerText = "Save Toggles";
+        btn.disabled = false;
+    }
 }
 
 function autoSelectClient(clientId) {
@@ -177,5 +231,79 @@ function autoSelectClient(clientId) {
         setTimeout(() => select.style.boxShadow = "", 800);
     }
 }
+
+function editDraftQty(draftId, currentQty, returnedQty, itemName) {
+    let input = prompt(`Enter new total quantity for ${itemName}:`, currentQty);
+    if (input === null) return; // cancelled
+    let newQty = parseInt(input);
+    if (isNaN(newQty) || newQty <= 0) {
+        alert("Invalid quantity.");
+        return;
+    }
+    if (newQty < returnedQty) {
+        alert("Quantity cannot be less than the amount already returned (" + returnedQty + ").");
+        return;
+    }
+    
+    document.getElementById('input_edit_qty_' + draftId).value = newQty;
+    document.getElementById('form_edit_qty_' + draftId).submit();
+}
+
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js">
+function editDraftQty(draftId, currentQty, returnedQty, itemName) {
+    let input = prompt(`Enter new total quantity for ${itemName}:`, currentQty);
+    if (input === null) return; // cancelled
+    let newQty = parseInt(input);
+    if (isNaN(newQty) || newQty <= 0) {
+        alert("Invalid quantity.");
+        return;
+    }
+    if (newQty < returnedQty) {
+        alert("Quantity cannot be less than the amount already returned (" + returnedQty + ").");
+        return;
+    }
+    
+    document.getElementById('input_edit_qty_' + draftId).value = newQty;
+    document.getElementById('form_edit_qty_' + draftId).submit();
+}
+
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        if(document.getElementById('itemSelect')) {
+            new TomSelect("#itemSelect",{
+                plugins: ['remove_button'],
+                maxItems: null,
+                hideSelected: true,
+                closeAfterSelect: false,
+                render: {
+                    item: function(data, escape) {
+                        return '<div>' + escape(data.text) + '</div>';
+                    }
+                }
+            });
+        }
+    });
+
+function editDraftQty(draftId, currentQty, returnedQty, itemName) {
+    let input = prompt(`Enter new total quantity for ${itemName}:`, currentQty);
+    if (input === null) return; // cancelled
+    let newQty = parseInt(input);
+    if (isNaN(newQty) || newQty <= 0) {
+        alert("Invalid quantity.");
+        return;
+    }
+    if (newQty < returnedQty) {
+        alert("Quantity cannot be less than the amount already returned (" + returnedQty + ").");
+        return;
+    }
+    
+    document.getElementById('input_edit_qty_' + draftId).value = newQty;
+    document.getElementById('form_edit_qty_' + draftId).submit();
+}
+
+</script>
+
 {% endblock %}
