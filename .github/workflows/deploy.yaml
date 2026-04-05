@@ -17,9 +17,17 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          # CRITICAL: This stops the action if any command fails!
+          script_stop: true 
           script: |
             cd ~/inventory
-            git pull origin main
+            # Force the server to match GitHub exactly (wipes any manual edits on EC2)
+            git fetch --all
+            git reset --hard origin/main 
+            
+            # Update dependencies
             source venv/bin/activate
             pip install -r requirements.txt
+            
+            # Restart the service
             sudo systemctl restart traxxit
