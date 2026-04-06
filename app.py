@@ -17,8 +17,23 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
+from sqlalchemy import text
 with app.app_context():
     db.create_all()
+    
+    # Auto-migrate: Add client_role if it doesn't exist (fails safely if it does)
+    try:
+        db.session.execute(text("ALTER TABLE draft_record ADD COLUMN client_role VARCHAR(20) DEFAULT 'master';"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        
+    try:
+        db.session.execute(text("ALTER TABLE day_record ADD COLUMN client_role VARCHAR(20) DEFAULT 'master';"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
     if not User.query.first():
         db.session.add_all([
             User(username='bossman', password='password123', role='boss', display_name='boss')
