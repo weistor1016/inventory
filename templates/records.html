@@ -17,7 +17,7 @@
                     <input type="hidden" name="add_entry" value="1">
                     <div class="mb-3">
                         <label class="small fw-bold">Client</label>
-                        <select name="client_id" id="clientSelect" class="form-select" required>
+                        <select name="client_id" id="clientSelect" class="form-select mb-2" required>
                             {% for c in clients %}
                                 <option value="{{ c.id }}" 
                                     {% if c.id == last_client_id %} selected {% endif %}>
@@ -25,6 +25,16 @@
                                 </option>
                             {% endfor %}
                         </select>
+                        <div class="d-flex gap-3 px-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="client_role" id="roleMaster" value="master" checked>
+                                <label class="form-check-label small" for="roleMaster">Master</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="client_role" id="roleSlave" value="slave">
+                                <label class="form-check-label small" for="roleSlave">Slave</label>
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="small fw-bold">Item</label>
@@ -278,6 +288,10 @@ function editDraftQty(draftId, currentQty, returnedQty, itemName) {
                 maxItems: null,
                 hideSelected: true,
                 closeAfterSelect: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                },
                 render: {
                     item: function(data, escape) {
                         return '<div>' + escape(data.text) + '</div>';

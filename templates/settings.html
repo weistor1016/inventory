@@ -51,7 +51,7 @@
                         {% endfor %}
                     </ul>
 
-                    {% if places_pagination.pages > 1 %}
+                    {% if places_pagination.pages %}
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not places_pagination.has_prev }}">
@@ -101,7 +101,7 @@
                         {% endfor %}
                     </ul>
 
-                    {% if clients_pagination.pages > 1 %}
+                    {% if clients_pagination.pages %}
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_prev }}">

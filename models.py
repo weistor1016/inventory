@@ -40,6 +40,7 @@ class DayRecord(db.Model):
     item_id = db.Column(db.Integer, db.ForeignKey('item.id'))
     place_id = db.Column(db.Integer, db.ForeignKey('place.id'))
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'))
+    client_role = db.Column(db.String(20), default='master')
     # This must match the table name 'user'
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) 
     
@@ -62,6 +63,7 @@ class DraftRecord(db.Model):
     item_id = db.Column(db.Integer, db.ForeignKey('item.id'))
     place_id = db.Column(db.Integer, db.ForeignKey('place.id'))
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'))
+    client_role = db.Column(db.String(20), default='master')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     quantity_out = db.Column(db.Integer, nullable=False)
     quantity_returned = db.Column(db.Integer, default=0)
