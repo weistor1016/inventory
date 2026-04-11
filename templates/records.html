@@ -292,6 +292,10 @@ function editDraftQty(draftId, currentQty, returnedQty, itemName) {
                     field: "text",
                     direction: "asc"
                 },
+                onItemAdd: function() {
+                this.setTextboxValue(''); // This clears the search text after selection
+                this.refreshOptions();    // This ensures the dropdown updates correctly
+            },
                 render: {
                     item: function(data, escape) {
                         return '<div>' + escape(data.text) + '</div>';
