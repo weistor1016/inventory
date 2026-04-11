@@ -103,15 +103,17 @@ def inventory():
         session['view_user_id'] = int(request.args.get('view_user_id'))
         return redirect(url_for('inventory'))
         
-    view_id = user.id
-    if not getattr(user, 'has_own_inventory', True):
-        # If they don't have their own, use their selected view or default to the first boss/user with inventory
-        view_id = session.get('view_user_id')
-        if not view_id:
+    view_id = session.get('view_user_id')
+    if not view_id:
+        if getattr(user, 'has_own_inventory', True):
+            view_id = user.id
+        else:
             first_user = User.query.filter_by(has_own_inventory=True).first()
             if first_user:
                 view_id = first_user.id
-                session['view_user_id'] = view_id
+            else:
+                view_id = user.id
+        session['view_user_id'] = view_id
     
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
@@ -166,9 +168,7 @@ def inventory():
         ).scalar() or 0
 
     # Fetch users with inventory for the dropdown
-    users_with_inventory = []
-    if not getattr(user, 'has_own_inventory', True):
-        users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
+    users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
 
     return render_template('inventory.html', 
                            pagination=pagination, 
@@ -231,15 +231,22 @@ def record():
         db.session.commit()
         return redirect(url_for('record'))
 
+    if 'view_user_id' in request.args:
+        session['view_user_id'] = int(request.args.get('view_user_id'))
+        return redirect(url_for('record'))
+
     # Determine whose items to show
-    view_id = user.id
-    if not getattr(user, 'has_own_inventory', True):
-        view_id = session.get('view_user_id')
-        if not view_id:
+    view_id = session.get('view_user_id')
+    if not view_id:
+        if getattr(user, 'has_own_inventory', True):
+            view_id = user.id
+        else:
             first_user = User.query.filter_by(has_own_inventory=True).first()
             if first_user:
                 view_id = first_user.id
-                session['view_user_id'] = view_id
+            else:
+                view_id = user.id
+        session['view_user_id'] = view_id
 
     # 3. Live Stock Calculation (Ordered A-Z)
     db_items = Item.query.filter_by(user_id=view_id, is_active=True).order_by(Item.name).all()
@@ -273,6 +280,7 @@ def record():
         grouped_entries[c_name].append(entry)
 
     today_str = datetime.now().strftime('%Y-%m-%d')
+    users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
 
     return render_template('records.html', 
                            place=Place.query.get(place_id), 
@@ -280,7 +288,9 @@ def record():
                            clients=clients, 
                            grouped_entries=grouped_entries,
                            last_client_id=session.get('last_client_id'),
-                           today_date=today_str)
+                           today_date=today_str,
+                           users_with_inventory=users_with_inventory,
+                           view_id=view_id)
 
 
 @app.route('/update_draft_qty/<int:draft_id>', methods=['POST'])

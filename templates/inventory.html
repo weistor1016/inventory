@@ -23,8 +23,7 @@
     </div>
     {% endif %}
 
-    <div class="{% if current_user.has_own_inventory %}col-md-8{% else %}col-md-12{% endif %}">
-        {% if not current_user.has_own_inventory %}
+    <div class="col-md-12">
         <div class="card shadow-sm p-3 mb-4 border-0 bg-light">
             <form action="{{ url_for('inventory') }}" method="GET" class="d-flex align-items-center gap-3">
                 <label class="fw-bold mb-0 text-nowrap"><i class="bi bi-people-fill text-primary me-2"></i> Viewing Inventory For:</label>
@@ -37,7 +36,6 @@
                 </select>
             </form>
         </div>
-        {% endif %}
 
         <form method="POST">
             <div class="card shadow-sm p-4 border-0">

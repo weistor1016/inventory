@@ -8,6 +8,19 @@
     </a>
 </div>
 
+<div class="card shadow-sm p-3 mb-4 border-0 bg-light">
+    <form action="{{ url_for('record') }}" method="GET" class="d-flex align-items-center gap-3">
+        <label class="fw-bold mb-0 text-nowrap"><i class="bi bi-box-seam text-primary me-2"></i> Inventory Source:</label>
+        <select name="view_user_id" class="form-select border-0 shadow-sm" onchange="this.form.submit()">
+            {% for u in users_with_inventory %}
+                <option value="{{ u.id }}" {% if u.id == view_id %}selected{% endif %}>
+                    {{ u.display_name or u.username }}'s Inventory
+                </option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
 <div class="row">
     <div class="col-md-4 mb-4">
         <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
