@@ -1,6 +1,6 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-from models import db, Item, Place, Client, DayRecord, User, DraftRecord
+from models import db, Item, Place, Client, DayRecord, User, DraftRecord, ReturnLog
 from datetime import datetime
 from sqlalchemy import func, desc, case
 from dotenv import load_dotenv
@@ -41,6 +41,48 @@ with app.app_context():
     except Exception:
         db.session.rollback()
 
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS return_log (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT NOW(),
+                staff_id INTEGER REFERENCES "user"(id),
+                quantity INTEGER NOT NULL,
+                action VARCHAR(10),
+                day_record_id INTEGER REFERENCES day_record(id) ON DELETE CASCADE,
+                draft_record_id INTEGER REFERENCES draft_record(id) ON DELETE CASCADE
+            );
+        """))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    try:
+        db.session.execute(text("""
+            ALTER TABLE return_log DROP CONSTRAINT IF EXISTS return_log_draft_record_id_fkey;
+            ALTER TABLE return_log ADD CONSTRAINT return_log_draft_record_id_fkey 
+                FOREIGN KEY (draft_record_id) REFERENCES draft_record(id) ON DELETE CASCADE;
+        """))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    try:
+        db.session.execute(text("""
+            ALTER TABLE return_log DROP CONSTRAINT IF EXISTS return_log_day_record_id_fkey;
+            ALTER TABLE return_log ADD CONSTRAINT return_log_day_record_id_fkey 
+                FOREIGN KEY (day_record_id) REFERENCES day_record(id) ON DELETE CASCADE;
+        """))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    try:
+        db.session.execute(text("ALTER TABLE draft_record ADD COLUMN IF NOT EXISTS is_sold BOOLEAN DEFAULT FALSE;"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        
     if not User.query.first():
         db.session.add_all([
             User(username='bossman', password='password123', role='boss', display_name='boss')
@@ -269,6 +311,7 @@ def record():
         'qty': d.quantity_out, 
         'qty_returned': d.quantity_returned,
         'is_returned': d.quantity_returned >= d.quantity_out,
+        'is_sold': getattr(d, 'is_sold', False),
         'user_color': user_color_map.get(d.item.user_id, '#6c757d')
     } for d in drafts]
     
@@ -287,6 +330,10 @@ def record():
         if c_name not in grouped_entries:
             grouped_entries[c_name] = []
         grouped_entries[c_name].append(entry)
+
+    # Sort each client's items: Out first, then Returned, then Sold at bottom
+    for c_name in grouped_entries:
+        grouped_entries[c_name].sort(key=lambda e: (1 if e.get('is_sold') else 0, 1 if e.get('is_returned') else 0))
 
     today_str = datetime.now().strftime('%Y-%m-%d')
     users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
@@ -382,6 +429,7 @@ def save_day():
                     quantity_out=draft.quantity_out,
                     quantity_returned=draft.quantity_returned,
                     is_returned=draft.quantity_returned >= draft.quantity_out,
+                    is_sold=getattr(draft, 'is_sold', False),
                     timestamp=final_timestamp
                 )
                 db.session.add(new_record)
@@ -410,12 +458,21 @@ def toggle_sold(record_id):
 
     if record.is_sold:
         record.is_sold = False
+        action = 'unsold'
         flash(f"Unmarked {item.name} as Sold.", "info")
     else:
         record.is_sold = True
-        record.is_returned = False 
+        record.is_returned = False
+        action = 'sold'
         flash(f"{item.name} marked as Sold.", "success")
     
+    log = ReturnLog(
+        staff_id=session['user_id'],
+        quantity=record.quantity_out,
+        action=action,
+        day_record_id=record.id
+    )
+    db.session.add(log)
     db.session.commit()
     return redirect(request.referrer)
 
@@ -573,9 +630,32 @@ def bulk_toggle_session():
                 if 0 < qty <= draft.quantity_returned:
                     draft.quantity_returned -= qty
             draft.is_returned = draft.quantity_returned >= draft.quantity_out
-            
+            log = ReturnLog(
+                staff_id=session['user_id'],
+                quantity=qty,
+                action=action,
+                draft_record_id=draft.id
+            )
+            db.session.add(log)
     db.session.commit()
     return {"success": True}
+
+@app.route('/return_log/<string:record_type>/<int:record_id>')
+def return_log(record_type, record_id):
+    if 'user_id' not in session: return {"error": "Unauthorized"}, 401
+    if record_type == 'day':
+        logs = ReturnLog.query.filter_by(day_record_id=record_id).order_by(ReturnLog.timestamp).all()
+    else:
+        logs = ReturnLog.query.filter_by(draft_record_id=record_id).order_by(ReturnLog.timestamp).all()
+    
+    return {
+        "logs": [{
+            "time": log.timestamp.strftime('%d %b %Y %H:%M'),
+            "staff": log.staff.display_name or log.staff.username,
+            "qty": log.quantity,
+            "action": log.action
+        } for log in logs]
+    }
 
 @app.route('/toggle_session_return/<string:entry_id>', methods=['GET', 'POST'])
 def toggle_session_return(entry_id):
@@ -659,13 +739,16 @@ def session_details(ts, place_id):
     grouped_data = {}
     user_color_map = {u.id: (u.color or '#6c757d') for u in User.query.all()}
     for r in records:
-        # Pass archiving status to the UI
         r.item_is_archived = not r.item.is_active
         r.row_color = user_color_map.get(r.item.user_id, '#6c757d')
         client_name = r.client.name
         if client_name not in grouped_data:
             grouped_data[client_name] = []
         grouped_data[client_name].append(r)
+
+    # Sort each client's items: Out first, then Returned, then Sold at bottom
+    for client_name in grouped_data:
+        grouped_data[client_name].sort(key=lambda r: (1 if r.is_sold else 0, 1 if r.is_returned else 0))
         
     return render_template('session_details.html', 
                            grouped_data=grouped_data, 
@@ -734,6 +817,13 @@ def toggle_return(record_id):
         item.quantity -= qty
         
     record.is_returned = record.quantity_returned >= record.quantity_out
+    log = ReturnLog(
+        staff_id=session['user_id'],
+        quantity=qty,
+        action=action,
+        day_record_id=record.id
+    )
+    db.session.add(log)
     db.session.commit()
 
     if item.quantity == 0:
@@ -862,3 +952,26 @@ def delete_staff(staff_id):
         flash(f"Error processing deletion: {str(e)}", "danger")
         
     return redirect(url_for('settings'))
+
+@app.route('/toggle_sold_draft/<int:draft_id>')
+def toggle_sold_draft(draft_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    draft = DraftRecord.query.get_or_404(draft_id)
+    item = Item.query.get(draft.item_id)
+    draft.is_sold = not draft.is_sold
+    if draft.is_sold:
+        draft.is_returned = False
+        action = 'sold'
+    else:
+        action = 'unsold'
+    
+    log = ReturnLog(
+        staff_id=session['user_id'],
+        quantity=draft.quantity_out,
+        action=action,
+        draft_record_id=draft.id
+    )
+    db.session.add(log)
+    db.session.commit()
+    flash(f"{item.name} marked as {'sold' if draft.is_sold else 'unsold'}.", "success")
+    return redirect(url_for('record'))

@@ -37,8 +37,9 @@
             <tbody>
                 {% for r in items %}
                 <tr>
-                    <td class="fw-bold" style="background-color: {{ r.row_color }}66 !important;">
-                        {{ r.item.name }}
+                    <td class="fw-bold" style="background-color: {{ r.row_color }}66 !important; cursor: pointer;"
+                        onclick="showReturnLog('day', {{ r.id }}, '{{ r.item.name }}')">
+                        <span class="text-decoration-underline">{{ r.item.name }}</span>
                         {% if r.item_is_archived %}
                             <small class="text-muted ms-2">(Archived)</small>
                         {% endif %}

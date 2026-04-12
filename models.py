@@ -72,3 +72,17 @@ class DraftRecord(db.Model):
     place = db.relationship('Place')
     client = db.relationship('Client')
     author = db.relationship('User')
+    is_sold = db.Column(db.Boolean, default=False)
+
+class ReturnLog(db.Model):
+    __tablename__ = 'return_log'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    staff_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    quantity = db.Column(db.Integer, nullable=False)
+    action = db.Column(db.String(10))
+
+    day_record_id = db.Column(db.Integer, db.ForeignKey('day_record.id', ondelete='CASCADE'), nullable=True)
+    draft_record_id = db.Column(db.Integer, db.ForeignKey('draft_record.id', ondelete='CASCADE'), nullable=True)
+    
+    staff = db.relationship('User')

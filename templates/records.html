@@ -101,8 +101,10 @@
                         {% for entry in items %}
                         {% set row_color = entry['user_color'] %}
                         <tr>
-                            <td class="ps-4 text-truncate" style="background-color: {{ row_color }}66 !important;">
-                                <i class="bi bi-arrow-return-right me-2 text-muted"></i>{{ entry.item_name }}
+                            <td class="ps-4 text-truncate" style="background-color: {{ row_color }}66 !important; cursor: pointer;"
+                                onclick="showReturnLog('draft', {{ entry.id }}, '{{ entry.item_name }}', {{ entry.is_returned | lower }}, {{ entry.is_sold | lower }})">
+                                <i class="bi bi-arrow-return-right me-2 text-muted"></i>
+                                <span class="text-decoration-underline">{{ entry.item_name }}</span>
                             </td>
                             <td class="text-center fw-bold align-middle" style="background-color: {{ row_color }}66 !important;">
                                 <form action="{{ url_for('update_draft_qty', draft_id=entry.id) }}" method="POST" id="form_edit_qty_{{ entry.id }}" class="d-none">
@@ -117,7 +119,11 @@
                                 {% endif %}
                             </td>
                             <td class="text-center" style="background-color: {{ row_color }}66 !important;">
-                                {% if entry.is_returned %}
+                                {% if entry.is_sold %}
+                                    <button type="button" class="btn btn-sm w-75 btn-dark" disabled>
+                                        <i class="bi bi-cash-stack me-1"></i> Sold
+                                    </button>
+                                {% elif entry.is_returned %}
                                     <button type="button" class="btn btn-sm w-75 btn-success" 
                                             onclick="handleReturn({{ entry.id }}, {{ entry.qty_returned }}, 'undo', this)">
                                         Returned
