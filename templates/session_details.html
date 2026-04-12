@@ -36,15 +36,15 @@
             </thead>
             <tbody>
                 {% for r in items %}
-                <tr class="{{ 'table-success opacity-75' if r.is_returned else ('table-dark opacity-50' if r.is_sold else '') }}">
-                    <td class="fw-bold">
+                <tr>
+                    <td class="fw-bold" style="background-color: {{ r.row_color }}66 !important;">
                         {{ r.item.name }}
                         {% if r.item_is_archived %}
                             <small class="text-muted ms-2">(Archived)</small>
                         {% endif %}
                     </td>
-                    <td class="text-center">{{ r.quantity_out }}</td>
-                    <td class="text-center">
+                    <td class="text-center" style="background-color: {{ r.row_color }}66 !important;">{{ r.quantity_out }}</td>
+                    <td class="text-center" style="background-color: {{ r.row_color }}66 !important;">
                         {% if r.is_sold %}
                             <span class="badge bg-dark px-3 py-2">
                                 <i class="bi bi-cash-stack me-1"></i> Sold
@@ -66,7 +66,7 @@
                             <br><small class="text-muted fw-bold">{{ r.quantity_returned }} returned</small>
                         {% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end" style="background-color: {{ r.row_color }}66 !important;">
                         {% if r.item_is_archived %}
                             <button class="btn btn-sm btn-light border text-muted px-3" disabled>
                                 <i class="bi bi-lock-fill"></i> Locked
@@ -77,7 +77,6 @@
                                     <form action="{{ url_for('toggle_return', record_id=r.id) }}" method="POST" id="form_history_{{ r.id }}" class="m-0 p-0" style="display: inline-block;">
                                         <input type="hidden" name="qty" id="qty_history_{{ r.id }}" value="1">
                                         <input type="hidden" name="action" id="action_history_{{ r.id }}" value="return">
-                                        
                                         {% if r.is_returned %}
                                             <button type="button" class="btn btn-sm btn-success" 
                                                     style="border-top-right-radius: 0; border-bottom-right-radius: 0;"
@@ -93,12 +92,11 @@
                                         {% endif %}
                                     </form>
                                 {% endif %}
-                                
                                 {% if not r.is_returned %}
                                 <a href="{{ url_for('toggle_sold', record_id=r.id) }}" 
-                                   class="btn btn-sm {{ 'btn-dark text-white' if r.is_sold else 'btn-outline-dark' }}" 
-                                   onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold?' }}')"
-                                   title="{{ 'Unmark as Sold' if r.is_sold else 'Mark as Sold' }}">
+                                class="btn btn-sm {{ 'btn-dark text-white' if r.is_sold else 'btn-outline-dark' }}" 
+                                onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold?' }}')"
+                                title="{{ 'Unmark as Sold' if r.is_sold else 'Mark as Sold' }}">
                                     <i class="bi bi-cart-plus"></i> {{ 'Undo Sold' if r.is_sold else 'Sell' }}
                                 </a>
                                 {% endif %}

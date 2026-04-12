@@ -13,7 +13,7 @@ class User(db.Model):
     display_name = db.Column(db.String(100), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     has_own_inventory = db.Column(db.Boolean, default=True)
-
+    color = db.Column(db.String(7), default='#6c757d')
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)

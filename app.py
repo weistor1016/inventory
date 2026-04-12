@@ -34,6 +34,13 @@ with app.app_context():
     except Exception:
         db.session.rollback()
 
+    # After the existing client_role migration blocks (around line 35):
+    try:
+        db.session.execute(text("ALTER TABLE \"user\" ADD COLUMN color VARCHAR(7) DEFAULT '#6c757d';"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
     if not User.query.first():
         db.session.add_all([
             User(username='bossman', password='password123', role='boss', display_name='boss')
@@ -252,6 +259,7 @@ def record():
     db_items = Item.query.filter_by(user_id=view_id, is_active=True).order_by(Item.name).all()
     
     drafts = DraftRecord.query.filter_by(place_id=place_id).all()
+    user_color_map = {u.id: (u.color or '#6c757d') for u in User.query.all()}
     temp_entries = [{
         'id': str(d.id), 
         'client_id': d.client_id, 
@@ -260,7 +268,8 @@ def record():
         'item_name': d.item.name, 
         'qty': d.quantity_out, 
         'qty_returned': d.quantity_returned,
-        'is_returned': d.quantity_returned >= d.quantity_out
+        'is_returned': d.quantity_returned >= d.quantity_out,
+        'user_color': user_color_map.get(d.item.user_id, '#6c757d')
     } for d in drafts]
     
     display_items = []
@@ -350,20 +359,34 @@ def save_day():
 
     try:
         for draft in drafts:
-            new_record = DayRecord(
-                item_id=draft.item_id,
-                place_id=place_id,
-                client_id=draft.client_id,
-                client_role=getattr(draft, 'client_role', 'master'),
-                user_id=session['user_id'],
-                quantity_out=draft.quantity_out,
-                quantity_returned=draft.quantity_returned,
-                is_returned=draft.quantity_returned >= draft.quantity_out,
-                timestamp=final_timestamp
-            )
-            db.session.add(new_record)
+            # Check if a record already exists for same date/place/client/item
+            existing = DayRecord.query.filter(
+                func.date(DayRecord.timestamp) == final_timestamp.date(),
+                DayRecord.place_id == place_id,
+                DayRecord.client_id == draft.client_id,
+                DayRecord.client_role == getattr(draft, 'client_role', 'master'),
+                DayRecord.item_id == draft.item_id
+            ).first()
+
+            if existing:
+                existing.quantity_out += draft.quantity_out
+                existing.quantity_returned += draft.quantity_returned
+                existing.is_returned = existing.quantity_returned >= existing.quantity_out
+            else:
+                new_record = DayRecord(
+                    item_id=draft.item_id,
+                    place_id=place_id,
+                    client_id=draft.client_id,
+                    client_role=getattr(draft, 'client_role', 'master'),
+                    user_id=session['user_id'],
+                    quantity_out=draft.quantity_out,
+                    quantity_returned=draft.quantity_returned,
+                    is_returned=draft.quantity_returned >= draft.quantity_out,
+                    timestamp=final_timestamp
+                )
+                db.session.add(new_record)
             db.session.delete(draft)
-                
+            
         db.session.commit()
         session.pop('current_place_id', None)
         
@@ -455,7 +478,8 @@ def settings():
                     password=request.form['new_password'], 
                     role='staff',
                     display_name=request.form.get('new_display_name', ''),
-                    has_own_inventory='has_own_inventory' in request.form
+                    has_own_inventory='has_own_inventory' in request.form,
+                    color = request.form.get('new_color', '#6c757d')
                 )
                 db.session.add(new_user)
                 flash(f"Staff {new_user.username} created successfully.", "success")
@@ -492,6 +516,11 @@ def settings():
             else:
                 db.session.add(Client(name=name))
                 flash(f"Added '{name}' successfully.", "success")
+        
+        # 4. ADD THIS NEW BLOCK HERE ↓
+        elif 'update_color' in request.form:
+            user.color = request.form.get('color', '#6c757d')
+            flash("Your color has been updated!", "success")
 
         db.session.commit()
         return redirect(url_for('settings'))
@@ -628,9 +657,11 @@ def session_details(ts, place_id):
         return redirect(url_for('history'))
 
     grouped_data = {}
+    user_color_map = {u.id: (u.color or '#6c757d') for u in User.query.all()}
     for r in records:
         # Pass archiving status to the UI
         r.item_is_archived = not r.item.is_active
+        r.row_color = user_color_map.get(r.item.user_id, '#6c757d')
         client_name = r.client.name
         if client_name not in grouped_data:
             grouped_data[client_name] = []

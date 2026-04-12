@@ -99,11 +99,12 @@
                         </tr>
                         
                         {% for entry in items %}
-                        <tr class="{{ 'table-success' if entry.is_returned else '' }}">
-                            <td class="ps-4 text-truncate">
+                        {% set row_color = entry['user_color'] %}
+                        <tr>
+                            <td class="ps-4 text-truncate" style="background-color: {{ row_color }}66 !important;">
                                 <i class="bi bi-arrow-return-right me-2 text-muted"></i>{{ entry.item_name }}
                             </td>
-                            <td class="text-center fw-bold align-middle">
+                            <td class="text-center fw-bold align-middle" style="background-color: {{ row_color }}66 !important;">
                                 <form action="{{ url_for('update_draft_qty', draft_id=entry.id) }}" method="POST" id="form_edit_qty_{{ entry.id }}" class="d-none">
                                     <input type="hidden" name="new_qty" id="input_edit_qty_{{ entry.id }}">
                                 </form>
@@ -115,7 +116,7 @@
                                     <span style="cursor: pointer;" onclick="editDraftQty('{{ entry.id }}', {{ entry.qty }}, {{ entry.qty_returned }}, '{{ entry.item_name | replace("'", "\\'") }}')">{{ entry.qty }}</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" style="background-color: {{ row_color }}66 !important;">
                                 {% if entry.is_returned %}
                                     <button type="button" class="btn btn-sm w-75 btn-success" 
                                             onclick="handleReturn({{ entry.id }}, {{ entry.qty_returned }}, 'undo', this)">
@@ -128,7 +129,7 @@
                                     </button>
                                 {% endif %}
                             </td>
-                            <td class="text-end">
+                            <td class="text-end" style="background-color: {{ row_color }}66 !important;">
                                 <a href="{{ url_for('remove_entry', entry_id=entry.id) }}" class="btn btn-link text-danger p-0">
                                     <i class="bi bi-trash3"></i>
                                 </a>
