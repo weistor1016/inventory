@@ -102,7 +102,7 @@
                         {% set row_color = entry['user_color'] %}
                         <tr>
                             <td class="ps-4 text-truncate" style="background-color: {{ row_color }}66 !important; cursor: pointer;"
-                                onclick="showReturnLog('draft', {{ entry.id }}, '{{ entry.item_name }}', {{ entry.is_returned | lower }}, {{ entry.is_sold | lower }})">
+                                onclick="showReturnLog('draft', {{ entry.id }}, '{{ entry.item_name | replace("'", "\\'") }}', {{ entry.qty - entry.qty_returned }}, {{ entry.is_returned | lower }}, {{ entry.is_sold | lower }})">
                                 <i class="bi bi-arrow-return-right me-2 text-muted"></i>
                                 <span class="text-decoration-underline">{{ entry.item_name }}</span>
                             </td>

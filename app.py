@@ -1014,23 +1014,39 @@ def delete_staff(staff_id):
 def toggle_sold_draft(draft_id):
     if 'user_id' not in session: return redirect(url_for('login'))
     draft = DraftRecord.query.get_or_404(draft_id)
-    item = Item.query.get(draft.item_id)
-    draft.is_sold = not draft.is_sold
-    if draft.is_sold:
-        draft.is_returned = False
-        action = 'sold'
-    else:
-        action = 'unsold'
     
-    log = ReturnLog(
-        staff_id=session['user_id'],
-        quantity=draft.quantity_out,
-        action=action,
-        draft_record_id=draft.id
-    )
-    db.session.add(log)
+    if draft.is_sold:
+        draft.is_sold = False
+        db.session.commit()
+        flash("Unmarked as sold.", "info")
+        return redirect(url_for('record'))
+
+    # Get qty from URL (e.g., /toggle_sold_draft/123?qty=5)
+    qty_to_sell = request.args.get('qty', type=int)
+    max_available = draft.quantity_out - draft.quantity_returned
+
+    if not qty_to_sell or qty_to_sell >= max_available:
+        # Sell the whole remaining amount
+        draft.is_sold = True
+        draft.is_returned = False
+    else:
+        # Split the row: Create a new row for the sold quantity
+        new_sold_entry = DraftRecord(
+            item_id=draft.item_id,
+            place_id=draft.place_id,
+            client_id=draft.client_id,
+            client_role=draft.client_role,
+            user_id=session['user_id'],
+            quantity_out=qty_to_sell,
+            is_returned=False,
+            is_sold=True
+        )
+        # Subtract from the original "Out" row
+        draft.quantity_out -= qty_to_sell
+        db.session.add(new_sold_entry)
+
     db.session.commit()
-    flash(f"{item.name} marked as {'sold' if draft.is_sold else 'unsold'}.", "success")
+    flash("Item marked as sold.", "success")
     return redirect(url_for('record'))
 
 

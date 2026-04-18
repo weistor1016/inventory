@@ -98,10 +98,9 @@
                     <div class="text-center text-muted py-3">Loading...</div>
                 </div>
                 <div class="modal-footer" id="returnLogFooter" style="display:none!important;">
-                    <a id="returnLogSellBtn" href="#" class="btn btn-dark w-100 fw-bold"
-                    onclick="return confirm('Mark this item as sold?')">
+                    <button id="returnLogSellBtn" class="btn btn-dark w-100 fw-bold">
                         <i class="bi bi-cart-plus me-2"></i>Mark as Sold
-                    </a>
+                    </button>
                 </div>
             </div>
         </div>
@@ -110,63 +109,83 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-    async function showReturnLog(recordType, recordId, itemName, isReturned = false, isSold = false) {
-        document.getElementById('returnLogItemName').innerText = itemName;
-        document.getElementById('returnLogBody').innerHTML = '<div class="text-center text-muted py-3">Loading...</div>';
-        
-        let footer = document.getElementById('returnLogFooter');
-        let sellBtn = document.getElementById('returnLogSellBtn');
-        if (recordType === 'draft' && !isReturned && !isSold) {
-            sellBtn.href = `/toggle_sold_draft/${recordId}`;
-            sellBtn.innerHTML = '<i class="bi bi-cart-plus me-2"></i>Mark as Sold';
-            sellBtn.onclick = () => confirm('Mark this item as sold?');
-            footer.style.display = 'flex';
-        } else if (recordType === 'draft' && isSold) {
-            sellBtn.href = `/toggle_sold_draft/${recordId}`;
-            sellBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-2"></i>Undo Sold';
-            sellBtn.onclick = () => confirm('Undo sold status?');
-            footer.style.display = 'flex';
-        } else {
-            footer.style.display = 'none';
-        }
-
-        let modal = new bootstrap.Modal(document.getElementById('returnLogModal'));
-        modal.show();
-        
-        let response = await fetch(`/return_log/${recordType}/${recordId}`);
-        let data = await response.json();
-        
-        if (data.logs.length === 0) {
-            document.getElementById('returnLogBody').innerHTML = 
-                '<p class="text-center text-muted py-3">No return activity yet.</p>';
+// New function to handle the sell prompt
+function handleSell(id, maxQty, isHistory = false) {
+    let qty = 1;
+    if (maxQty > 1) {
+        let input = prompt(`How many units were sold? (Max: ${maxQty})`, maxQty);
+        if (input === null) return; // Cancelled
+        qty = parseInt(input);
+        if (isNaN(qty) || qty <= 0 || qty > maxQty) {
+            alert("Invalid quantity.");
             return;
         }
-        
-        let html = '<ul class="list-group list-group-flush">';
-        for (let log of data.logs) {
-            let icon, badge;
-            if (log.action === 'return') {
-                icon = '<i class="bi bi-box-arrow-in-down text-success me-2"></i>';
-                badge = `<span class="badge bg-success">+${log.qty} returned</span>`;
-            } else if (log.action === 'undo') {
-                icon = '<i class="bi bi-arrow-counterclockwise text-warning me-2"></i>';
-                badge = `<span class="badge bg-warning text-dark">-${log.qty} undo</span>`;
-            } else if (log.action === 'sold') {
-                icon = '<i class="bi bi-cash-stack text-dark me-2"></i>';
-                badge = `<span class="badge bg-dark">${log.qty} sold</span>`;
-            } else if (log.action === 'unsold') {
-                icon = '<i class="bi bi-arrow-counterclockwise text-secondary me-2"></i>';
-                badge = `<span class="badge bg-secondary">undo sold</span>`;
-            }
-            html += `
-                <li class="list-group-item d-flex justify-content-between align-items-center">
+    }
+    
+    let baseUrl = isHistory ? '/toggle_sold/' : '/toggle_sold_draft/';
+    window.location.href = baseUrl + id + '?qty=' + qty;
+}
+
+async function showReturnLog(recordType, recordId, itemName, maxQty = 1, isReturned = false, isSold = false) {
+    document.getElementById('returnLogItemName').innerText = itemName;
+    document.getElementById('returnLogBody').innerHTML = '<div class="text-center text-muted py-3">Loading...</div>';
+    
+    let footer = document.getElementById('returnLogFooter');
+    let sellBtn = document.getElementById('returnLogSellBtn');
+
+    // Configure Sell Button Logic
+    if (recordType === 'draft') {
+        footer.style.display = 'flex';
+        if (isSold) {
+            sellBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-2"></i>Undo Sold';
+            sellBtn.className = "btn btn-outline-dark w-100 fw-bold";
+            sellBtn.onclick = () => {
+                if(confirm('Undo sold status?')) window.location.href = `/toggle_sold_draft/${recordId}`;
+            };
+        } else {
+            sellBtn.innerHTML = '<i class="bi bi-cart-plus me-2"></i>Mark as Sold';
+            sellBtn.className = "btn btn-dark w-100 fw-bold";
+            // Pass maxQty to handleSell
+            sellBtn.onclick = () => handleSell(recordId, maxQty, false);
+        }
+    } else {
+        footer.style.display = 'none';
+    }
+
+    let modal = new bootstrap.Modal(document.getElementById('returnLogModal'));
+    modal.show();
+    
+    let response = await fetch(`/return_log/${recordType}/${recordId}`);
+    let data = await response.json();
+    
+    if (data.logs.length === 0) {
+        document.getElementById('returnLogBody').innerHTML = '<p class="text-center text-muted py-3">No activity yet.</p>';
+        return;
+    }
+    
+    let html = '<ul class="list-group list-group-flush">';
+    for (let log of data.logs) {
+        let icon, badge;
+        if (log.action === 'return') {
+            icon = '<i class="bi bi-box-arrow-in-down text-success me-2"></i>';
+            badge = `<span class="badge bg-success">+${log.qty} returned</span>`;
+        } else if (log.action === 'undo') {
+            icon = '<i class="bi bi-arrow-counterclockwise text-warning me-2"></i>';
+            badge = `<span class="badge bg-warning text-dark">-${log.qty} undo</span>`;
+        } else if (log.action === 'sold') {
+            icon = '<i class="bi bi-cash-stack text-dark me-2"></i>';
+            badge = `<span class="badge bg-dark">${log.qty} sold</span>`;
+        } else if (log.action === 'unsold') {
+            icon = '<i class="bi bi-arrow-counterclockwise text-secondary me-2"></i>';
+            badge = `<span class="badge bg-secondary">undo sold</span>`;
+        }
+        html += `<li class="list-group-item d-flex justify-content-between align-items-center">
                     <div>${icon}<strong>${log.staff}</strong> — ${log.time}</div>
                     ${badge}
-                </li>`;
-        }
-        html += '</ul>';
-        document.getElementById('returnLogBody').innerHTML = html;
+                 </li>`;
     }
-    </script>
+    document.getElementById('returnLogBody').innerHTML = html + '</ul>';
+}
+</script>
 </body>
 </html>
