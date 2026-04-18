@@ -1,6 +1,6 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-from models import db, Item, Place, Client, DayRecord, User, DraftRecord, ReturnLog
+from models import db, Item, Place, Client, DayRecord, User, DraftRecord, ReturnLog, DamageReport
 from datetime import datetime
 from sqlalchemy import func, desc, case
 from dotenv import load_dotenv
@@ -79,6 +79,23 @@ with app.app_context():
 
     try:
         db.session.execute(text("ALTER TABLE draft_record ADD COLUMN IF NOT EXISTS is_sold BOOLEAN DEFAULT FALSE;"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    # Create damage_report table if it doesn't exist
+    try:
+        db.session.execute(text("""
+            CREATE TABLE IF NOT EXISTS damage_report (
+                id SERIAL PRIMARY KEY,
+                item_id INTEGER NOT NULL REFERENCES item(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES "user"(id),
+                quantity INTEGER NOT NULL,
+                reason VARCHAR(20) DEFAULT 'other',
+                notes TEXT,
+                timestamp TIMESTAMP DEFAULT NOW()
+            );
+        """))
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -219,13 +236,53 @@ def inventory():
     # Fetch users with inventory for the dropdown
     users_with_inventory = User.query.filter_by(has_own_inventory=True, is_active=True).all()
 
+    # --- DAMAGE REPORTS PAGINATION ---
+    r_page     = request.args.get('r_page', 1, type=int)
+    r_per_page = request.args.get('r_per_page', 10, type=int)
+    rf_date    = request.args.get('rf_date', '').strip()
+    rf_name    = request.args.get('rf_name', '').strip()
+
+    reports_query = DamageReport.query.join(Item).join(User, DamageReport.user_id == User.id).filter(Item.user_id == view_id)
+
+    if rf_date:
+        try:
+            from datetime import date as date_type
+            d = datetime.strptime(rf_date, '%Y-%m-%d').date()
+            reports_query = reports_query.filter(func.date(DamageReport.timestamp) == d)
+        except ValueError:
+            pass
+
+    if rf_name:
+        reports_query = reports_query.filter(Item.name.ilike(f'%{rf_name}%'))
+
+    reports_query = reports_query.order_by(DamageReport.timestamp.desc())
+    reports_pagination_raw = reports_query.paginate(page=r_page, per_page=r_per_page)
+
+    # Convert to simple dicts for tojson in template
+    report_items = []
+    for r in reports_pagination_raw.items:
+        report_items.append({
+            'item_name': r.item.name,
+            'qty':       r.quantity,
+            'reason':    r.reason,
+            'notes':     r.notes or '',
+            'staff':     r.reporter.display_name or r.reporter.username,
+            'time':      r.timestamp.strftime('%d %b %Y, %H:%M'),
+        })
+
+    reports_pagination_raw.items = report_items
+
     return render_template('inventory.html', 
                            pagination=pagination, 
                            items=pagination.items, 
                            search_query=search_query, 
                            per_page=per_page,
                            users_with_inventory=users_with_inventory,
-                           view_id=view_id)
+                           view_id=view_id,
+                           reports_pagination=reports_pagination_raw,
+                           r_per_page=r_per_page,
+                           rf_date=rf_date,
+                           rf_name=rf_name)
 
 @app.route('/record', methods=['GET', 'POST'])
 def record():
@@ -975,3 +1032,93 @@ def toggle_sold_draft(draft_id):
     db.session.commit()
     flash(f"{item.name} marked as {'sold' if draft.is_sold else 'unsold'}.", "success")
     return redirect(url_for('record'))
+
+
+# ── DAMAGE / LOSS REPORTS ─────────────────────────────────────────────────────
+
+@app.route('/damage_report', methods=['POST'])
+def damage_report():
+    """Submit a broken/lost item report and reduce stock accordingly."""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    user = db.session.get(User, session['user_id'])
+    if not getattr(user, 'has_own_inventory', True):
+        flash("You do not have permission to submit damage reports.", "danger")
+        return redirect(url_for('inventory'))
+
+    item_id  = request.form.get('item_id', type=int)
+    qty      = request.form.get('qty', type=int)
+    reason   = request.form.get('reason', '').strip()   # 'broken' | 'lost' | 'other'
+    notes    = request.form.get('notes', '').strip()
+
+    if not item_id or not qty or qty < 1:
+        flash("Please select an item and a valid quantity.", "danger")
+        return redirect(url_for('inventory'))
+
+    item = Item.query.filter_by(id=item_id, user_id=user.id).first()
+    if not item:
+        flash("Item not found.", "danger")
+        return redirect(url_for('inventory'))
+
+    if qty > item.quantity:
+        flash(f"Cannot report more than the current stock ({item.quantity}).", "danger")
+        return redirect(url_for('inventory'))
+
+    # Reduce stock
+    item.quantity -= qty
+
+    # Persist report
+    report = DamageReport(
+        item_id=item_id,
+        user_id=session['user_id'],
+        quantity=qty,
+        reason=reason or 'other',
+        notes=notes,
+        timestamp=datetime.now()
+    )
+    db.session.add(report)
+    db.session.commit()
+
+    flash(f"Damage report submitted: {qty}× {item.name} ({reason or 'other'}) — stock reduced to {item.quantity}.", "warning")
+    return redirect(url_for('inventory'))
+
+
+@app.route('/damage_reports')
+def damage_reports_list():
+    """Return damage reports as JSON for the inventory page (AJAX)."""
+    if 'user_id' not in session:
+        return {'reports': []}, 401
+
+    from flask import jsonify
+
+    f_date  = request.args.get('filter_date', '').strip()
+    f_name  = request.args.get('filter_name', '').strip()
+    view_id = request.args.get('view_user_id', type=int) or session.get('view_user_id')
+
+    query = DamageReport.query.join(Item).join(User, DamageReport.user_id == User.id)
+
+    if view_id:
+        query = query.filter(Item.user_id == view_id)
+
+    if f_date:
+        try:
+            d = datetime.strptime(f_date, '%Y-%m-%d').date()
+            query = query.filter(func.date(DamageReport.timestamp) == d)
+        except ValueError:
+            pass
+
+    if f_name:
+        query = query.filter(Item.name.ilike(f'%{f_name}%'))
+
+    reports = query.order_by(DamageReport.timestamp.desc()).limit(200).all()
+
+    return jsonify(reports=[{
+        'id':        r.id,
+        'item_name': r.item.name,
+        'qty':       r.quantity,
+        'reason':    r.reason,
+        'notes':     r.notes or '',
+        'staff':     r.reporter.display_name or r.reporter.username,
+        'time':      r.timestamp.strftime('%d %b %Y, %H:%M'),
+    } for r in reports])

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<span id="inventory"></span>
 <div class="row">
     {% if current_user.has_own_inventory %}
     <div class="col-md-4">
@@ -114,11 +115,12 @@
                     <!-- Left: Rows Per Page -->
                     <div class="d-flex align-items-center order-3 order-md-1">
                         <label class="small fw-bold text-muted text-uppercase me-2 mb-0">Rows:</label>
-                        <select name="per_page" class="form-select form-select-sm bg-light border-0 shadow-sm w-auto" 
-                                form="searchForm" onchange="document.getElementById('searchForm').submit()">
-                            <option value="10" {{ 'selected' if per_page == 10 }}>10</option>
-                            <option value="20" {{ 'selected' if per_page == 20 }}>20</option>
-                            <option value="50" {{ 'selected' if per_page == 50 }}>50</option>
+                        <select name="per_page" class="form-select form-select-sm bg-light border-0 shadow-sm w-auto"
+                                onchange="window.location=this.value">
+                            {% for n in [10, 20, 50] %}
+                            <option value="{{ url_for('inventory', page=1, search=search_query, per_page=n, rf_date=rf_date, rf_name=rf_name) }}#inventory"
+                                    {{ 'selected' if per_page == n }}>{{ n }}</option>
+                            {% endfor %}
                         </select>
                     </div>
 
@@ -128,13 +130,13 @@
                         <nav>
                             <ul class="pagination pagination-sm justify-content-center mb-0">
                                 <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-                                    <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.prev_num, search=search_query, per_page=per_page) }}">Prev</a>
+                                    <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.prev_num, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name) }}#inventory">Prev</a>
                                 </li>
                                 
                                 {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
                                     {% if page_num %}
                                         <li class="page-item {{ 'active' if page_num == pagination.page }}">
-                                            <a class="page-link shadow-sm" href="{{ url_for('inventory', page=page_num, search=search_query, per_page=per_page) }}">{{ page_num }}</a>
+                                            <a class="page-link shadow-sm" href="{{ url_for('inventory', page=page_num, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name) }}#inventory">{{ page_num }}</a>
                                         </li>
                                     {% else %}
                                         <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -142,18 +144,22 @@
                                 {% endfor %}
 
                                 <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-                                    <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.next_num, search=search_query, per_page=per_page) }}">Next</a>
+                                    <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.next_num, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name) }}#inventory">Next</a>
                                 </li>
                             </ul>
                         </nav>
                         {% endif %}
                     </div>
 
-                    <!-- Right: Save All Button -->
-                    <div class="order-1 order-md-3 ms-md-auto w-100" style="max-width: 200px;">
+                    <!-- Right: Save All + Report Button -->
+                    <div class="order-1 order-md-3 ms-md-auto d-flex gap-2" style="max-width: 340px; width: 100%;">
                         {% if current_user.has_own_inventory %}
-                        <button type="submit" name="bulk_save" class="btn btn-success w-100 shadow-sm py-2 fw-bold">
+                        <button type="submit" name="bulk_save" class="btn btn-success flex-fill shadow-sm py-2 fw-bold">
                             <i class="bi bi-cloud-check me-2"></i> Save All
+                        </button>
+                        <button type="button" class="btn btn-danger flex-fill shadow-sm py-2 fw-bold"
+                                data-bs-toggle="modal" data-bs-target="#damageReportModal">
+                            <i class="bi bi-exclamation-triangle me-1"></i> Report
                         </button>
                         {% endif %}
                     </div>
@@ -161,7 +167,289 @@
             </div>
         </form>
 
-        <form id="searchForm" method="GET" action="{{ url_for('inventory') }}" class="d-none"></form>
     </div>
 </div>
+
+<span id="reports"></span>
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- DAMAGE / LOSS REPORTS SECTION                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-danger text-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Broken / Lost Reports
+                </h5>
+                <span class="badge bg-white text-danger">{{ reports_pagination.total }} report(s)</span>
+            </div>
+
+            <!-- Filters -->
+            <div class="card-body border-bottom bg-light py-3">
+                <form method="GET" action="{{ url_for('inventory') }}#reports" id="reportsFilterForm">
+                    {# carry over inventory params so they don't reset #}
+                    <input type="hidden" name="page" value="{{ pagination.page }}">
+                    <input type="hidden" name="search" value="{{ search_query }}">
+                    <input type="hidden" name="per_page" value="{{ per_page }}">
+                    <input type="hidden" name="view_user_id" value="{{ view_id }}">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-muted text-uppercase mb-1">Date</label>
+                            <input type="date" name="rf_date" class="form-control form-control-sm border-0 shadow-sm" value="{{ rf_date }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted text-uppercase mb-1">Item Name</label>
+                            <input type="text" name="rf_name" class="form-control form-control-sm border-0 shadow-sm" placeholder="Search by item…" value="{{ rf_name }}">
+                        </div>
+                        <div class="col-md-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-sm btn-danger w-100 fw-bold shadow-sm">
+                                <i class="bi bi-filter me-1"></i> Apply
+                            </button>
+                            <a href="{{ url_for('inventory', page=pagination.page, search=search_query, per_page=per_page) }}#reports"
+                               class="btn btn-sm btn-outline-secondary w-100 fw-bold">
+                                Reset
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-center">Reason</th>
+                            <th>Reported By</th>
+                            <th>Date &amp; Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in reports_pagination.items %}
+                        <tr style="cursor:pointer;" onclick="showReportDetail({{ r|tojson }})">
+                            <td class="fw-bold">{{ r.item_name }}</td>
+                            <td class="text-center"><span class="badge bg-dark rounded-pill px-3">{{ r.qty }}</span></td>
+                            <td class="text-center">
+                                {% if r.reason == 'broken' %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-tools me-1"></i>Broken</span>
+                                {% elif r.reason == 'lost' %}
+                                    <span class="badge bg-danger"><i class="bi bi-question-circle me-1"></i>Lost</span>
+                                {% else %}
+                                    <span class="badge bg-secondary"><i class="bi bi-three-dots me-1"></i>Other</span>
+                                {% endif %}
+                            </td>
+                            <td><i class="bi bi-person-fill me-1 text-muted"></i>{{ r.staff }}</td>
+                            <td class="text-muted small"><i class="bi bi-clock me-1"></i>{{ r.time }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-5">
+                                <i class="bi bi-check-circle text-success fs-2 d-block mb-2"></i>No reports found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-center px-3 py-2 border-top bg-light gap-2">
+                <!-- Left: count -->
+                <small class="text-muted order-3 order-md-1">
+                    {% if reports_pagination.total == 0 %}
+                        No reports
+                    {% else %}
+                        Showing {{ (reports_pagination.page - 1) * r_per_page + 1 }}–{{ [reports_pagination.page * r_per_page, reports_pagination.total] | min }} of {{ reports_pagination.total }}
+                    {% endif %}
+                </small>
+
+                <!-- Center: page buttons -->
+                <div class="order-2">
+                    {% if reports_pagination.pages > 1 %}
+                    <nav>
+                        <ul class="pagination pagination-sm justify-content-center mb-0">
+                            <li class="page-item {{ 'disabled' if not reports_pagination.has_prev }}">
+                                <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.page, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name, r_page=reports_pagination.prev_num, r_per_page=r_per_page) }}#reports">Prev</a>
+                            </li>
+                            {% for page_num in reports_pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                                {% if page_num %}
+                                    <li class="page-item {{ 'active' if page_num == reports_pagination.page }}">
+                                        <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.page, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name, r_page=page_num, r_per_page=r_per_page) }}#reports">{{ page_num }}</a>
+                                    </li>
+                                {% else %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {{ 'disabled' if not reports_pagination.has_next }}">
+                                <a class="page-link shadow-sm" href="{{ url_for('inventory', page=pagination.page, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name, r_page=reports_pagination.next_num, r_per_page=r_per_page) }}#reports">Next</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+
+                <!-- Right: rows per page -->
+                <div class="d-flex align-items-center order-1 order-md-3">
+                    <label class="small fw-bold text-muted text-uppercase me-2 mb-0">Rows:</label>
+                    <select class="form-select form-select-sm bg-light border-0 shadow-sm w-auto"
+                            onchange="window.location=this.value">
+                        {% for n in [10, 20, 50] %}
+                        <option value="{{ url_for('inventory', page=pagination.page, search=search_query, per_page=per_page, rf_date=rf_date, rf_name=rf_name, r_page=1, r_per_page=n) }}#reports"
+                                {{ 'selected' if r_per_page == n }}>{{ n }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: Report Broken / Lost                                    -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+{% block modals %}
+<div class="modal fade" id="damageReportModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Report Broken / Lost Item
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('damage_report') }}" onsubmit="return confirmReport()">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Item</label>
+                        <select name="item_id" id="dr_item_id" class="form-select border-0 shadow-sm" required>
+                            <option value="" disabled selected>Choose an item…</option>
+                            {% for item in items %}
+                            <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Quantity</label>
+                        <input type="number" name="qty" id="dr_qty" class="form-control border-0 shadow-sm"
+                               value="1" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Reason</label>
+                        <div class="d-flex gap-3 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="reason" id="r_broken" value="broken" checked>
+                                <label class="form-check-label fw-semibold" for="r_broken">
+                                    <i class="bi bi-tools text-warning me-1"></i>Broken
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="reason" id="r_lost" value="lost">
+                                <label class="form-check-label fw-semibold" for="r_lost">
+                                    <i class="bi bi-question-circle text-danger me-1"></i>Lost
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="reason" id="r_other" value="other">
+                                <label class="form-check-label fw-semibold" for="r_other">
+                                    <i class="bi bi-three-dots text-secondary me-1"></i>Other
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Notes <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea name="notes" class="form-control border-0 shadow-sm" rows="2"
+                                  placeholder="e.g. Dropped during transport…"></textarea>
+                    </div>
+                    <div class="alert alert-warning border-0 shadow-sm mb-0 small mt-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        This will <strong>permanently reduce</strong> the stock count by the reported quantity.
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger fw-bold px-4">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Submit Report
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function showReportDetail(r) {
+    const reasonBadgeMap = {
+        broken: '<span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-tools me-1"></i>Broken</span>',
+        lost:   '<span class="badge bg-danger fs-6 px-3 py-2"><i class="bi bi-question-circle me-1"></i>Lost</span>',
+        other:  '<span class="badge bg-secondary fs-6 px-3 py-2"><i class="bi bi-three-dots me-1"></i>Other</span>'
+    };
+    document.getElementById('rd_item').textContent   = r.item_name;
+    document.getElementById('rd_qty').textContent    = r.qty;
+    document.getElementById('rd_reason').innerHTML   = reasonBadgeMap[r.reason] || reasonBadgeMap.other;
+    document.getElementById('rd_staff').textContent  = r.staff;
+    document.getElementById('rd_time').textContent   = r.time;
+    document.getElementById('rd_notes').textContent  = r.notes || '—';
+    new bootstrap.Modal(document.getElementById('reportDetailModal')).show();
+}
+
+function confirmReport() {
+    const item = document.getElementById('dr_item_id');
+    const qty  = document.getElementById('dr_qty').value;
+    const name = item.options[item.selectedIndex]?.text || 'this item';
+    return confirm(`Reduce stock of "${name}" by ${qty}? This cannot be undone.`);
+}
+
+// Scroll to reports section if we came from a reports pagination/filter action
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.location.hash === '#reports') {
+        document.getElementById('reports')?.scrollIntoView({ behavior: 'smooth' });
+    }
+});
+</script>
+
+<!-- Report Detail Modal -->
+<div class="modal fade" id="reportDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-clipboard2-x-fill me-2"></i>Report Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <dl class="row mb-0">
+                    <dt class="col-4 text-muted small text-uppercase">Item</dt>
+                    <dd class="col-8 fw-bold fs-5 mb-3" id="rd_item"></dd>
+
+                    <dt class="col-4 text-muted small text-uppercase">Quantity</dt>
+                    <dd class="col-8 mb-3">
+                        <span class="badge bg-dark rounded-pill px-3 fs-6" id="rd_qty"></span>
+                    </dd>
+
+                    <dt class="col-4 text-muted small text-uppercase">Reason</dt>
+                    <dd class="col-8 mb-3" id="rd_reason"></dd>
+
+                    <dt class="col-4 text-muted small text-uppercase">Reported By</dt>
+                    <dd class="col-8 mb-3" id="rd_staff"></dd>
+
+                    <dt class="col-4 text-muted small text-uppercase">Date &amp; Time</dt>
+                    <dd class="col-8 mb-3 text-muted" id="rd_time"></dd>
+
+                    <dt class="col-4 text-muted small text-uppercase">Notes</dt>
+                    <dd class="col-8 mb-0 fst-italic text-secondary" id="rd_notes"></dd>
+                </dl>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

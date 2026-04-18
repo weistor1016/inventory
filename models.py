@@ -86,3 +86,19 @@ class ReturnLog(db.Model):
     draft_record_id = db.Column(db.Integer, db.ForeignKey('draft_record.id', ondelete='CASCADE'), nullable=True)
     
     staff = db.relationship('User')
+
+class DamageReport(db.Model):
+    """Records every broken / lost item report submitted from the Inventory page."""
+    __tablename__ = 'damage_report'
+
+    id        = db.Column(db.Integer, primary_key=True)
+    item_id   = db.Column(db.Integer, db.ForeignKey('item.id', ondelete='CASCADE'), nullable=False)
+    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    quantity  = db.Column(db.Integer, nullable=False)
+    reason    = db.Column(db.String(20), default='other')   # 'broken' | 'lost' | 'other'
+    notes     = db.Column(db.Text, nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships (adjust backref names to match your existing models if needed)
+    item     = db.relationship('Item', backref=db.backref('damage_reports', lazy=True))
+    reporter = db.relationship('User', backref=db.backref('damage_reports', lazy=True))
