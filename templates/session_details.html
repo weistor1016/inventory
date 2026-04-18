@@ -20,6 +20,8 @@
 </div>
 
 {% for client_name, items in grouped_data.items() %}
+{% set active_items = items | rejectattr('is_sold') | list %}
+{% set sold_items   = items | selectattr('is_sold')  | list %}
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-primary text-white py-3">
         <h5 class="mb-0 fw-bold"><i class="bi bi-person-circle me-2"></i>Client: {{ client_name }}</h5>
@@ -35,7 +37,8 @@
                 </tr>
             </thead>
             <tbody>
-                {% for r in items %}
+                {# ── Active (out / returned) rows ── #}
+                {% for r in active_items %}
                 <tr>
                     <td class="fw-bold" style="background-color: {{ r.row_color }}66 !important; cursor: pointer;"
                         onclick="showReturnLog('day', {{ r.id }}, '{{ r.item.name }}')">
@@ -46,11 +49,7 @@
                     </td>
                     <td class="text-center" style="background-color: {{ r.row_color }}66 !important;">{{ r.quantity_out }}</td>
                     <td class="text-center" style="background-color: {{ r.row_color }}66 !important;">
-                        {% if r.is_sold %}
-                            <span class="badge bg-dark px-3 py-2">
-                                <i class="bi bi-cash-stack me-1"></i> Sold
-                            </span>
-                        {% elif r.is_returned %}
+                        {% if r.is_returned %}
                             <span class="badge bg-success px-3 py-2">
                                 <i class="bi bi-check-lg me-1"></i> Returned
                             </span>
@@ -74,38 +73,80 @@
                             </button>
                         {% else %}
                             <div class="btn-group shadow-sm">
-                                {% if not r.is_sold %}
+                                {% if not r.is_returned %}
                                     <form action="{{ url_for('toggle_return', record_id=r.id) }}" method="POST" id="form_history_{{ r.id }}" class="m-0 p-0" style="display: inline-block;">
                                         <input type="hidden" name="qty" id="qty_history_{{ r.id }}" value="1">
                                         <input type="hidden" name="action" id="action_history_{{ r.id }}" value="return">
-                                        {% if r.is_returned %}
-                                            <button type="button" class="btn btn-sm btn-success" 
-                                                    style="border-top-right-radius: 0; border-bottom-right-radius: 0;"
-                                                    onclick="handleReturn('history_{{ r.id }}', {{ r.quantity_returned }}, 'undo')" title="Undo Return">
-                                                <i class="bi bi-arrow-left-right"></i> Return
-                                            </button>
-                                        {% else %}
-                                            <button type="button" class="btn btn-sm btn-outline-primary" 
-                                                    style="border-top-right-radius: 0; border-bottom-right-radius: 0;"
-                                                    onclick="handleReturn('history_{{ r.id }}', {{ r.quantity_out - r.quantity_returned }}, 'return')" title="Toggle Return">
-                                                <i class="bi bi-arrow-left-right"></i> Return
-                                            </button>
-                                        {% endif %}
+                                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                                style="border-top-right-radius: 0; border-bottom-right-radius: 0;"
+                                                onclick="handleReturn('history_{{ r.id }}', {{ r.quantity_out - r.quantity_returned }}, 'return')" title="Mark as Returned">
+                                            <i class="bi bi-arrow-left-right"></i> Return
+                                        </button>
                                     </form>
-                                {% endif %}
-                                {% if not r.is_returned %}
-                                <a href="{{ url_for('toggle_sold', record_id=r.id) }}" 
-                                class="btn btn-sm {{ 'btn-dark text-white' if r.is_sold else 'btn-outline-dark' }}" 
-                                onclick="return confirm('{{ 'Undo mark as sold?' if r.is_sold else 'Mark this as sold?' }}')"
-                                title="{{ 'Unmark as Sold' if r.is_sold else 'Mark as Sold' }}">
-                                    <i class="bi bi-cart-plus"></i> {{ 'Undo Sold' if r.is_sold else 'Sell' }}
-                                </a>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-dark"
+                                            onclick="handleHistorySell({{ r.id }}, {{ r.quantity_out - r.quantity_returned }}, '{{ r.item.name | e }}')"
+                                            title="Mark as Sold">
+                                        <i class="bi bi-cart-plus"></i> Sell
+                                    </button>
+                                {% else %}
+                                    {# Returned — allow undo only #}
+                                    <form action="{{ url_for('toggle_return', record_id=r.id) }}" method="POST" id="form_history_{{ r.id }}" class="m-0 p-0" style="display: inline-block;">
+                                        <input type="hidden" name="qty" id="qty_history_{{ r.id }}" value="1">
+                                        <input type="hidden" name="action" id="action_history_{{ r.id }}" value="undo">
+                                        <button type="button" class="btn btn-sm btn-success"
+                                                onclick="handleReturn('history_{{ r.id }}', {{ r.quantity_returned }}, 'undo')" title="Undo Return">
+                                            <i class="bi bi-arrow-left-right"></i> Undo Return
+                                        </button>
+                                    </form>
                                 {% endif %}
                             </div>
                         {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
+
+                {# ── Sold divider + rows ── #}
+                {% if sold_items %}
+                <tr class="table-secondary">
+                    <td colspan="4" class="py-1 px-3">
+                        <small class="fw-bold text-muted text-uppercase" style="letter-spacing:.05em;">
+                            <i class="bi bi-cash-stack me-1"></i>Sold
+                        </small>
+                    </td>
+                </tr>
+                {% for r in sold_items %}
+                <tr style="opacity: 0.75;">
+                    <td class="fw-bold" style="background-color: {{ r.row_color }}33 !important; cursor: pointer;"
+                        onclick="showReturnLog('day', {{ r.id }}, '{{ r.item.name }}')">
+                        <span class="text-decoration-underline text-muted">{{ r.item.name }}</span>
+                        {% if r.item_is_archived %}
+                            <small class="text-muted ms-2">(Archived)</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-center" style="background-color: {{ r.row_color }}33 !important;">{{ r.quantity_out }}</td>
+                    <td class="text-center" style="background-color: {{ r.row_color }}33 !important;">
+                        <span class="badge bg-dark px-3 py-2">
+                            <i class="bi bi-cash-stack me-1"></i> Sold
+                        </span>
+                    </td>
+                    <td class="text-end" style="background-color: {{ r.row_color }}33 !important;">
+                        {% if not r.item_is_archived %}
+                        <a href="{{ url_for('toggle_sold', record_id=r.id) }}"
+                           class="btn btn-sm btn-outline-secondary"
+                           onclick="return confirm('Undo sold for {{ r.item.name }}?')"
+                           title="Undo Sold">
+                            <i class="bi bi-arrow-counterclockwise"></i> Undo Sold
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% endif %}
+
+                {% if active_items | length == 0 and sold_items | length == 0 %}
+                <tr><td colspan="4" class="text-center text-muted py-4">No items.</td></tr>
+                {% endif %}
             </tbody>
         </table>
     </div>
@@ -118,19 +159,30 @@ function handleReturn(formId, maxQty, actionType) {
     if (maxQty > 1) {
         let actionText = actionType === 'undo' ? 'undo return for' : 'return';
         let input = prompt(`How many items do you want to ${actionText}? (Max: ${maxQty})`, maxQty);
-        if (input === null) return; // User cancelled
+        if (input === null) return;
         qty = parseInt(input);
         if (isNaN(qty) || qty <= 0 || qty > maxQty) {
             alert("Invalid quantity entered.");
             return;
         }
-    } else {
-        qty = 1;
     }
-    
     document.getElementById('qty_' + formId).value = qty;
     document.getElementById('action_' + formId).value = actionType;
     document.getElementById('form_' + formId).submit();
+}
+
+function handleHistorySell(recordId, maxQty, itemName) {
+    let qty = maxQty;
+    if (maxQty > 1) {
+        let input = prompt(`How many units of "${itemName}" were sold? (Max: ${maxQty})`, maxQty);
+        if (input === null) return;
+        qty = parseInt(input);
+        if (isNaN(qty) || qty <= 0 || qty > maxQty) {
+            alert("Invalid quantity.");
+            return;
+        }
+    }
+    window.location.href = `/toggle_sold/${recordId}?qty=${qty}`;
 }
 </script>
 {% endblock %}

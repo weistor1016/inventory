@@ -463,13 +463,15 @@ def save_day():
 
     try:
         for draft in drafts:
-            # Check if a record already exists for same date/place/client/item
+            draft_is_sold = getattr(draft, 'is_sold', False)
+            # Check if a record already exists for same date/place/client/item AND same sold status
             existing = DayRecord.query.filter(
                 func.date(DayRecord.timestamp) == final_timestamp.date(),
                 DayRecord.place_id == place_id,
                 DayRecord.client_id == draft.client_id,
                 DayRecord.client_role == getattr(draft, 'client_role', 'master'),
-                DayRecord.item_id == draft.item_id
+                DayRecord.item_id == draft.item_id,
+                DayRecord.is_sold == draft_is_sold
             ).first()
 
             if existing:
