@@ -18,12 +18,12 @@
     </div>
 
     <div class="row">
-        <div class="col-md-6 mb-4">
+        <div class="col-md-6 mb-4" id="section-places">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body d-flex flex-column">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="fw-bold mb-0"><i class="bi bi-geo-alt text-primary"></i> Locations</h5>
-                        <form method="GET" class="d-flex" style="max-width: 200px;">
+                        <form method="GET" action="{{ url_for('settings') }}#section-places" class="d-flex" style="max-width: 200px;">
                             <input type="hidden" name="page_c" value="{{ clients_pagination.page }}">
                             <input type="hidden" name="search_c" value="{{ search_c }}">
                             <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -42,7 +42,7 @@
                         {% for p in places_pagination.items %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                             <span>{{ p.name }}</span>
-                            <a href="{{ url_for('delete_entry', type='place', id=p.id) }}" class="text-danger" onclick="return confirm('Delete this location? History will be kept.')">
+                            <a href="{{ url_for('delete_entry', type='place', id=p.id) }}#section-places" class="text-danger" onclick="return confirm('Delete this location? History will be kept.')">
                                 <i class="bi bi-trash"></i>
                             </a>
                         </li>
@@ -55,11 +55,11 @@
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not places_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.prev_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}#section-places">Prev</a>
                             </li>
                             <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ places_pagination.page }} / {{ places_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not places_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_p=places_pagination.next_num, page_c=clients_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}#section-places">Next</a>
                             </li>
                         </ul>
                     </nav>
@@ -68,12 +68,12 @@
             </div>
         </div>
 
-        <div class="col-md-6 mb-4">
+        <div class="col-md-6 mb-4" id="section-clients">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body d-flex flex-column">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="fw-bold mb-0"><i class="bi bi-people text-success"></i> Clients</h5>
-                        <form method="GET" class="d-flex" style="max-width: 200px;">
+                        <form method="GET" action="{{ url_for('settings') }}#section-clients" class="d-flex" style="max-width: 200px;">
                             <input type="hidden" name="page_p" value="{{ places_pagination.page }}">
                             <input type="hidden" name="search_p" value="{{ search_p }}">
                             <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -92,7 +92,7 @@
                         {% for c in clients_pagination.items %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                             <span>{{ c.name }}</span>
-                            <a href="{{ url_for('delete_entry', type='client', id=c.id) }}" class="text-danger" onclick="return confirm('Delete this client? History will be kept.')">
+                            <a href="{{ url_for('delete_entry', type='client', id=c.id) }}#section-clients" class="text-danger" onclick="return confirm('Delete this client? History will be kept.')">
                                 <i class="bi bi-trash"></i>
                             </a>
                         </li>
@@ -105,11 +105,11 @@
                     <nav class="mt-3">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_prev }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Prev</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.prev_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}#section-clients">Prev</a>
                             </li>
                             <li class="page-item disabled"><span class="page-link bg-light text-dark">{{ clients_pagination.page }} / {{ clients_pagination.pages }}</span></li>
                             <li class="page-item {{ 'disabled' if not clients_pagination.has_next }}">
-                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}">Next</a>
+                                <a class="page-link" href="{{ url_for('settings', page_c=clients_pagination.next_num, page_p=places_pagination.page, per_page=per_page, search_p=search_p, search_c=search_c) }}#section-clients">Next</a>
                             </li>
                         </ul>
                     </nav>

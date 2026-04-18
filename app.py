@@ -463,15 +463,13 @@ def save_day():
 
     try:
         for draft in drafts:
-            draft_is_sold = getattr(draft, 'is_sold', False)
-            # Check if a record already exists for same date/place/client/item AND same sold status
+            # Check if a record already exists for same date/place/client/item
             existing = DayRecord.query.filter(
                 func.date(DayRecord.timestamp) == final_timestamp.date(),
                 DayRecord.place_id == place_id,
                 DayRecord.client_id == draft.client_id,
                 DayRecord.client_role == getattr(draft, 'client_role', 'master'),
-                DayRecord.item_id == draft.item_id,
-                DayRecord.is_sold == draft_is_sold
+                DayRecord.item_id == draft.item_id
             ).first()
 
             if existing:
@@ -639,6 +637,12 @@ def settings():
             flash("Your color has been updated!", "success")
 
         db.session.commit()
+        
+        # Redirect to the relevant section anchor
+        if 'add_place' in request.form:
+            return redirect(url_for('settings') + '#section-places')
+        elif 'add_client' in request.form:
+            return redirect(url_for('settings') + '#section-clients')
         return redirect(url_for('settings'))
 
     # --- THE FIX: Use page_p and page_c here ---
@@ -945,7 +949,8 @@ def delete_entry(type, id):
         db.session.commit()
         flash(f"{type.capitalize()} archived. History remains intact.", "warning")
     
-    return redirect(url_for('settings'))
+    anchor = 'section-places' if type == 'place' else 'section-clients'
+    return redirect(url_for('settings') + f'#{anchor}')
 
 
 # --- BOSS STAFF MANAGEMENT ---
