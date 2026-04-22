@@ -303,24 +303,62 @@ function editDraftQty(draftId, currentQty, returnedQty, itemName) {
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         if(document.getElementById('itemSelect')) {
-            new TomSelect("#itemSelect",{
+            let ts = new TomSelect("#itemSelect", {
                 plugins: ['remove_button'],
                 maxItems: null,
                 hideSelected: true,
                 closeAfterSelect: false,
-                sortField: {
-                    field: "text",
-                    direction: "asc"
-                },
+                sortField: { field: "text", direction: "asc" },
                 onItemAdd: function() {
-                this.setTextboxValue(''); // This clears the search text after selection
-                this.refreshOptions();    // This ensures the dropdown updates correctly
-            },
+                    this.setTextboxValue('');
+                    this.refreshOptions();
+                },
                 render: {
                     item: function(data, escape) {
                         return '<div>' + escape(data.text) + '</div>';
                     }
                 }
+            });
+
+            // TWO-TAP mode (default for mobile):
+            // First tap opens dropdown, second tap on the search box opens keyboard.
+            // This is done by setting readonly on the control_input AFTER TomSelect opens,
+            // then removing it only when the user taps the input directly.
+            // Toggle in Settings to switch to immediate-keyboard mode.
+
+            function applyKeyboardMode() {
+                var wantKeyboard = localStorage.getItem('traxx_keyboard_on_open') === 'true';
+                if (!wantKeyboard) {
+                    ts.control_input.setAttribute('readonly', 'readonly');
+                } else {
+                    ts.control_input.removeAttribute('readonly');
+                }
+            }
+
+            applyKeyboardMode();
+
+            // When dropdown opens, re-enforce readonly in case TomSelect removed it
+            ts.on('dropdown_open', function() {
+                var wantKeyboard = localStorage.getItem('traxx_keyboard_on_open') === 'true';
+                if (!wantKeyboard) {
+                    ts.control_input.setAttribute('readonly', 'readonly');
+                }
+            });
+
+            // Second tap directly on the search input: remove readonly so keyboard appears
+            ts.control_input.addEventListener('click', function() {
+                var wantKeyboard = localStorage.getItem('traxx_keyboard_on_open') === 'true';
+                if (!wantKeyboard) {
+                    ts.control_input.removeAttribute('readonly');
+                    ts.control_input.focus();
+                }
+            });
+
+            // After dropdown closes, re-apply readonly for next open
+            ts.on('dropdown_close', function() {
+                setTimeout(function() {
+                    applyKeyboardMode();
+                }, 50);
             });
         }
     });
