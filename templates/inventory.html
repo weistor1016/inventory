@@ -228,7 +228,7 @@
                     </thead>
                     <tbody>
                         {% for r in reports_pagination.items %}
-                        <tr style="cursor:pointer;" onclick="showReportDetail({{ r|tojson }})">
+                        <tr style="cursor:pointer;" onclick="showReportDetail({{ r|tojson|forceescape }})">
                             <td class="fw-bold">{{ r.item_name }}</td>
                             <td class="text-center"><span class="badge bg-dark rounded-pill px-3">{{ r.qty }}</span></td>
                             <td class="text-center">
@@ -381,6 +381,9 @@
     </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: Report Detail                                           -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
 <script>
 function showReportDetail(r) {
     const reasonBadgeMap = {
@@ -404,7 +407,6 @@ function confirmReport() {
     return confirm(`Reduce stock of "${name}" by ${qty}? This cannot be undone.`);
 }
 
-// Scroll to reports section if we came from a reports pagination/filter action
 document.addEventListener('DOMContentLoaded', () => {
     if (window.location.hash === '#reports') {
         document.getElementById('reports')?.scrollIntoView({ behavior: 'smooth' });
@@ -412,7 +414,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-<!-- Report Detail Modal -->
 <div class="modal fade" id="reportDetailModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
